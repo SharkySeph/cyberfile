@@ -1,0 +1,17 @@
+[package]
+name = "cyberfile"
+version = "1.0.0"
+edition = "2021"
+description = "Cyberpunk-styled file manager for Linux"
+
+[dependencies]
+eframe = "0.31"
+egui_extras = { version = "0.31", features = ["default"] }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+chrono = "0.4"
+dirs = "6"
+open = "5"
+bytesize = "2"
+sysinfo = "0.32"
+image = "0.25"

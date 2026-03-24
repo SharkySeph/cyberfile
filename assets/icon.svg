@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Background gradient -->
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0A0A0F"/>
+      <stop offset="100%" stop-color="#0D1117"/>
+    </linearGradient>
+    <!-- Cyan glow -->
+    <linearGradient id="cyan-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00F0FF"/>
+      <stop offset="100%" stop-color="#0080CC"/>
+    </linearGradient>
+    <!-- Inner glow filter -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+    <!-- Outer glow for hex border -->
+    <filter id="outer-glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- Subtle scan line pattern -->
+    <pattern id="scanlines" patternUnits="userSpaceOnUse" width="4" height="4">
+      <rect width="4" height="2" fill="rgba(0,240,255,0.03)"/>
+      <rect y="2" width="4" height="2" fill="transparent"/>
+    </pattern>
+  </defs>
+
+  <!-- Background hexagon -->
+  <polygon
+    points="256,28 462,148 462,364 256,484 50,364 50,148"
+    fill="url(#bg)"
+    stroke="#00F0FF"
+    stroke-width="3"
+    filter="url(#outer-glow)"
+  />
+
+  <!-- Inner border hex -->
+  <polygon
+    points="256,52 440,160 440,352 256,460 72,352 72,160"
+    fill="none"
+    stroke="#004455"
+    stroke-width="1"
+    stroke-dasharray="8,4"
+  />
+
+  <!-- Scanline overlay -->
+  <polygon
+    points="256,28 462,148 462,364 256,484 50,364 50,148"
+    fill="url(#scanlines)"
+  />
+
+  <!-- Circuit traces — left -->
+  <line x1="72" y1="200" x2="140" y2="200" stroke="#00606688" stroke-width="1.5"/>
+  <line x1="140" y1="200" x2="140" y2="260" stroke="#00606688" stroke-width="1.5"/>
+  <circle cx="140" cy="260" r="3" fill="#006066"/>
+
+  <!-- Circuit traces — right -->
+  <line x1="440" y1="310" x2="372" y2="310" stroke="#00606688" stroke-width="1.5"/>
+  <line x1="372" y1="310" x2="372" y2="260" stroke="#00606688" stroke-width="1.5"/>
+  <circle cx="372" cy="260" r="3" fill="#006066"/>
+
+  <!-- Circuit traces — bottom -->
+  <line x1="220" y1="440" x2="220" y2="390" stroke="#00606688" stroke-width="1.5"/>
+  <line x1="220" y1="390" x2="280" y2="390" stroke="#00606688" stroke-width="1.5"/>
+  <circle cx="280" cy="390" r="3" fill="#006066"/>
+
+  <!-- Central folder/file icon — stylized cyber folder -->
+  <g filter="url(#glow)" transform="translate(256,240)">
+    <!-- Folder back panel -->
+    <path
+      d="M-80,-60 L-80,70 L80,70 L80,-40 L20,-40 L5,-60 Z"
+      fill="#0D1117"
+      stroke="url(#cyan-grad)"
+      stroke-width="2.5"
+      stroke-linejoin="round"
+    />
+
+    <!-- Folder tab highlight -->
+    <path
+      d="M-80,-60 L5,-60 L20,-40 L-80,-40"
+      fill="rgba(0,240,255,0.08)"
+    />
+
+    <!-- Hex pattern inside folder — row 1 -->
+    <polygon points="-30,-15 -18,-22 -6,-15 -6,-1 -18,6 -30,-1" fill="none" stroke="#00F0FF" stroke-width="1" opacity="0.4"/>
+    <polygon points="6,-15 18,-22 30,-15 30,-1 18,6 6,-1" fill="none" stroke="#00F0FF" stroke-width="1" opacity="0.4"/>
+
+    <!-- Hex pattern inside folder — row 2 -->
+    <polygon points="-18,10 -6,3 6,10 6,24 -6,31 -18,24" fill="rgba(0,240,255,0.12)" stroke="#00F0FF" stroke-width="1.5" opacity="0.7"/>
+
+    <!-- Hex pattern inside folder — row 3 -->
+    <polygon points="-30,30 -18,23 -6,30 -6,44 -18,51 -30,44" fill="none" stroke="#00F0FF" stroke-width="1" opacity="0.3"/>
+    <polygon points="6,30 18,23 30,30 30,44 18,51 6,44" fill="none" stroke="#00F0FF" stroke-width="1" opacity="0.3"/>
+
+    <!-- Data stream lines inside folder -->
+    <line x1="42" y1="-20" x2="42" y2="50" stroke="#00F0FF" stroke-width="0.8" opacity="0.3" stroke-dasharray="3,5"/>
+    <line x1="52" y1="-10" x2="52" y2="55" stroke="#00F0FF" stroke-width="0.8" opacity="0.2" stroke-dasharray="2,6"/>
+    <line x1="-50" y1="-5" x2="-50" y2="50" stroke="#00F0FF" stroke-width="0.8" opacity="0.2" stroke-dasharray="4,4"/>
+  </g>
+
+  <!-- Corner accent nodes -->
+  <circle cx="256" cy="36" r="5" fill="#00F0FF" opacity="0.8"/>
+  <circle cx="256" cy="476" r="5" fill="#00F0FF" opacity="0.8"/>
+  <circle cx="58" cy="152" r="3" fill="#FF2079" opacity="0.5"/>
+  <circle cx="454" cy="152" r="3" fill="#FF2079" opacity="0.5"/>
+  <circle cx="58" cy="360" r="3" fill="#FF2079" opacity="0.5"/>
+  <circle cx="454" cy="360" r="3" fill="#FF2079" opacity="0.5"/>
+</svg>

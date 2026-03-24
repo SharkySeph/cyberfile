@@ -1,0 +1,16 @@
+mod boot_screen;
+mod command_bar;
+mod data_rain;
+mod effects;
+mod file_view;
+mod grid_view;
+mod hex_grid_view;
+mod hex_viewer;
+mod hud_overlay;
+mod music_widget;
+mod preview_panel;
+mod resource_monitor;
+mod settings_panel;
+mod sidebar;
+mod status_bar;
+mod tabs;

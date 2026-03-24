@@ -1,0 +1,347 @@
+use eframe::egui::{self, Color32, RichText};
+use std::path::PathBuf;
+
+use crate::app::CyberFile;
+use crate::filesystem::SortColumn;
+use crate::theme::*;
+
+/// Pre-collected display data for a single file entry row.
+/// Avoids borrow conflicts in closures.
+struct DisplayRow {
+    index: usize,
+    name: String,
+    is_dir: bool,
+    is_symlink: bool,
+    is_hidden: bool,
+    size: String,
+    modified: String,
+    permissions: String,
+}
+
+impl CyberFile {
+    pub(crate) fn render_file_view(&mut self, ui: &mut egui::Ui) {
+        // ── Breadcrumb ─────────────────────────────────────────
+        let breadcrumb_nav = self.render_breadcrumb(ui);
+        if let Some(path) = breadcrumb_nav {
+            self.navigate_to(path);
+            return;
+        }
+
+        ui.add_space(2.0);
+
+        // ── Column Headers ─────────────────────────────────────
+        let mut sort_action: Option<SortColumn> = None;
+
+        ui.horizontal(|ui| {
+            ui.add_space(28.0); // icon column space
+
+            let sort_indicator = |col: SortColumn, current: SortColumn, asc: bool| -> &'static str {
+                if col == current {
+                    if asc { " ▲" } else { " ▼" }
+                } else {
+                    ""
+                }
+            };
+
+            let sort_col = self.sort_column;
+            let sort_asc = self.sort_ascending;
+
+            if ui
+                .selectable_label(
+                    false,
+                    RichText::new(format!(
+                        "NAME{}",
+                        sort_indicator(SortColumn::Name, sort_col, sort_asc)
+                    ))
+                    .color(CYAN)
+                    .monospace()
+                    .size(11.0)
+                    .strong(),
+                )
+                .clicked()
+            {
+                sort_action = Some(SortColumn::Name);
+            }
+
+            ui.add_space(ui.available_width() - 320.0);
+
+            if ui
+                .selectable_label(
+                    false,
+                    RichText::new(format!(
+                        "SIZE{}",
+                        sort_indicator(SortColumn::Size, sort_col, sort_asc)
+                    ))
+                    .color(CYAN)
+                    .monospace()
+                    .size(11.0)
+                    .strong(),
+                )
+                .clicked()
+            {
+                sort_action = Some(SortColumn::Size);
+            }
+
+            ui.add_space(20.0);
+
+            if ui
+                .selectable_label(
+                    false,
+                    RichText::new(format!(
+                        "MODIFIED{}",
+                        sort_indicator(SortColumn::Modified, sort_col, sort_asc)
+                    ))
+                    .color(CYAN)
+                    .monospace()
+                    .size(11.0)
+                    .strong(),
+                )
+                .clicked()
+            {
+                sort_action = Some(SortColumn::Modified);
+            }
+
+            ui.add_space(20.0);
+
+            ui.label(
+                RichText::new("ACCESS")
+                    .color(CYAN)
+                    .monospace()
+                    .size(11.0)
+                    .strong(),
+            );
+        });
+
+        // Apply sort
+        if let Some(col) = sort_action {
+            if self.sort_column == col {
+                self.sort_ascending = !self.sort_ascending;
+            } else {
+                self.sort_column = col;
+                self.sort_ascending = true;
+            }
+            self.sort_entries();
+        }
+
+        // Thin separator
+        let sep_rect = ui.available_rect_before_wrap();
+        ui.painter().line_segment(
+            [
+                egui::pos2(sep_rect.left(), sep_rect.top()),
+                egui::pos2(sep_rect.right(), sep_rect.top()),
+            ],
+            egui::Stroke::new(0.5, CYAN_DIM),
+        );
+        ui.add_space(3.0);
+
+        // ── File Listing ───────────────────────────────────────
+        // Pre-collect display data
+        let rows: Vec<DisplayRow> = self
+            .entries
+            .iter()
+            .enumerate()
+            .map(|(i, e)| DisplayRow {
+                index: i,
+                name: e.name.clone(),
+                is_dir: e.is_dir,
+                is_symlink: e.is_symlink,
+                is_hidden: e.is_hidden,
+                size: e.formatted_size(),
+                modified: e.formatted_modified(),
+                permissions: e.permission_string(),
+            })
+            .collect();
+
+        let current_selected = self.selected;
+        let mut new_selected = self.selected;
+        let mut open_index: Option<usize> = None;
+        let mut context_index: Option<usize> = None;
+        let mut blank_space_menu = false;
+
+        egui::ScrollArea::vertical()
+            .auto_shrink(false)
+            .show(ui, |ui| {
+                if rows.is_empty() {
+                    ui.add_space(40.0);
+                    ui.vertical_centered(|ui| {
+                        ui.label(
+                            RichText::new("[ SECTOR EMPTY ]")
+                                .color(TEXT_DIM)
+                                .monospace()
+                                .size(16.0),
+                        );
+                        ui.label(
+                            RichText::new("No data constructs found")
+                                .color(TEXT_DIM)
+                                .monospace()
+                                .size(12.0),
+                        );
+                    });
+                    return;
+                }
+
+                for row in &rows {
+                    let is_sel = current_selected == Some(row.index);
+
+                    let frame_fill = if is_sel {
+                        Color32::from_rgba_premultiplied(0xFF, 0x20, 0x79, 0x18)
+                    } else {
+                        Color32::TRANSPARENT
+                    };
+
+                    let frame = egui::Frame::new()
+                        .fill(frame_fill)
+                        .inner_margin(egui::Margin::symmetric(4, 1));
+
+                    let resp = frame.show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            // Icon
+                            let (icon, icon_color) = if row.is_dir {
+                                ("◆", CYAN)
+                            } else if row.is_symlink {
+                                ("◇", MAGENTA)
+                            } else {
+                                ("◇", TEXT_DIM)
+                            };
+                            ui.label(
+                                RichText::new(icon)
+                                    .color(icon_color)
+                                    .monospace()
+                                    .size(13.0),
+                            );
+                            ui.add_space(4.0);
+
+                            // Name
+                            let name_color = if row.is_dir {
+                                CYAN
+                            } else if row.is_symlink {
+                                MAGENTA
+                            } else if row.is_hidden {
+                                TEXT_DIM
+                            } else {
+                                TEXT_PRIMARY
+                            };
+
+                            let name_text = RichText::new(&row.name)
+                                .color(name_color)
+                                .monospace()
+                                .size(13.0);
+
+                            ui.label(name_text);
+
+                            // Right-aligned metadata
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.label(
+                                        RichText::new(&row.permissions)
+                                            .color(TEXT_DIM)
+                                            .monospace()
+                                            .size(11.0),
+                                    );
+                                    ui.add_space(16.0);
+                                    ui.label(
+                                        RichText::new(&row.modified)
+                                            .color(TEXT_DIM)
+                                            .monospace()
+                                            .size(11.0),
+                                    );
+                                    ui.add_space(16.0);
+                                    ui.label(
+                                        RichText::new(&row.size)
+                                            .color(TEXT_DIM)
+                                            .monospace()
+                                            .size(11.0),
+                                    );
+                                },
+                            );
+                        });
+                    });
+
+                    // Interaction: click entire row area
+                    let resp = resp.response.interact(egui::Sense::click());
+                    if resp.clicked() {
+                        new_selected = Some(row.index);
+                    }
+                    if resp.double_clicked() {
+                        open_index = Some(row.index);
+                    }
+                    if resp.secondary_clicked() {
+                        context_index = Some(row.index);
+                    }
+                }
+
+                // Blank space interaction — right-click opens background context menu,
+                // left-click deselects
+                let remaining = ui.available_rect_before_wrap();
+                let blank_resp = ui.allocate_rect(remaining, egui::Sense::click());
+                if blank_resp.clicked() {
+                    new_selected = None;
+                }
+                if blank_resp.secondary_clicked() {
+                    blank_space_menu = true;
+                }
+            });
+
+        // ── Apply Actions ─────────────────────────────────────
+        self.selected = new_selected;
+
+        if let Some(i) = open_index {
+            self.open_entry(i);
+        }
+
+        if let Some(i) = context_index {
+            self.selected = Some(i);
+            self.context_menu_open = true;
+            self.context_menu_pos = ui.ctx().input(|inp| {
+                inp.pointer.interact_pos().unwrap_or(egui::pos2(100.0, 100.0))
+            });
+        }
+
+        if blank_space_menu {
+            self.selected = None;
+            self.context_menu_open = true;
+            self.context_menu_pos = ui.ctx().input(|inp| {
+                inp.pointer.interact_pos().unwrap_or(egui::pos2(100.0, 100.0))
+            });
+        }
+    }
+
+    /// Render breadcrumb path navigation. Returns Some(path) if user clicked a segment.
+    fn render_breadcrumb(&self, ui: &mut egui::Ui) -> Option<PathBuf> {
+        let mut nav_to: Option<PathBuf> = None;
+
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new("◈ PATH")
+                    .color(CYAN)
+                    .monospace()
+                    .size(11.0)
+                    .strong(),
+            );
+            ui.add_space(6.0);
+
+            let mut accumulated = PathBuf::new();
+            for component in self.current_path.components() {
+                accumulated.push(component);
+                let comp_str = component.as_os_str().to_string_lossy();
+
+                ui.label(RichText::new("›").color(TEXT_DIM).monospace().size(12.0));
+
+                if ui
+                    .link(
+                        RichText::new(comp_str.as_ref())
+                            .color(CYAN_DIM)
+                            .monospace()
+                            .size(12.0),
+                    )
+                    .clicked()
+                {
+                    nav_to = Some(accumulated.clone());
+                }
+            }
+        });
+
+        nav_to
+    }
+}

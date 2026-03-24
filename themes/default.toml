@@ -1,0 +1,19 @@
+# CYBERFILE Theme: Night City
+# Inspired by Cyberpunk 2077
+
+[meta]
+name = "Night City"
+author = "CYBERFILE"
+version = "1.0"
+
+[colors]
+primary = "#00F0FF"
+secondary = "#FF2079"
+tertiary = "#F7F32A"
+background = "#0A0A0F"
+surface = "#0D1117"
+danger = "#FF3333"
+success = "#39FF14"
+text_primary = "#E0E0E8"
+text_dim = "#4A7A7F"
+border = "#1A2A33"
