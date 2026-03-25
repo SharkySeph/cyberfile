@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PREFIX="${PREFIX:-/usr/local}"
+PREFIX="${PREFIX:-$HOME/.local}"
 BIN_DIR="$PREFIX/bin"
 SHARE_DIR="$PREFIX/share"
 ICON_DIR="$SHARE_DIR/icons/hicolor"
@@ -12,9 +12,17 @@ echo "║       CYBERFILE — DEPLOY PHASE       ║"
 echo "╚══════════════════════════════════════╝"
 echo ""
 
-# Build release binary
-echo "[1/4] Compiling release binary..."
-cargo build --release
+# Build release binary (skip if already built)
+if command -v cargo &>/dev/null; then
+    echo "[1/4] Compiling release binary..."
+    cargo build --release
+elif [ -f target/release/cyberfile ]; then
+    echo "[1/4] Using existing release binary (cargo not in PATH)"
+else
+    echo "[!] ERROR: cargo not found and no release binary exists."
+    echo "    Run 'cargo build --release' first, then re-run this script."
+    exit 1
+fi
 
 # Install binary
 echo "[2/4] Installing binary to $BIN_DIR..."
