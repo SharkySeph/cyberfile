@@ -28,16 +28,25 @@ fi
 echo "[2/4] Installing binary to $BIN_DIR..."
 install -Dm755 target/release/cyberfile "$BIN_DIR/cyberfile"
 
-# Install desktop file
+# Install desktop file (patch Exec to use full path)
 echo "[3/4] Installing desktop entry..."
-install -Dm644 cyberfile.desktop "$APP_DIR/cyberfile.desktop"
+sed "s|Exec=cyberfile|Exec=$BIN_DIR/cyberfile|" cyberfile.desktop > /tmp/cyberfile.desktop
+install -Dm644 /tmp/cyberfile.desktop "$APP_DIR/cyberfile.desktop"
+rm -f /tmp/cyberfile.desktop
 
 # Install icon
 echo "[4/4] Installing icon..."
-if [ -f assets/icon.png ]; then
-    install -Dm644 assets/icon.png "$ICON_DIR/256x256/apps/cyberfile.png"
-    install -Dm644 assets/icon.png "$ICON_DIR/128x128/apps/cyberfile.png"
-    install -Dm644 assets/icon.png "$ICON_DIR/64x64/apps/cyberfile.png"
+if [ -f assets/icon-256.png ]; then
+    install -Dm644 assets/icon-256.png "$ICON_DIR/256x256/apps/cyberfile.png"
+fi
+if [ -f assets/icon-128.png ]; then
+    install -Dm644 assets/icon-128.png "$ICON_DIR/128x128/apps/cyberfile.png"
+fi
+if [ -f assets/icon-64.png ]; then
+    install -Dm644 assets/icon-64.png "$ICON_DIR/64x64/apps/cyberfile.png"
+fi
+if [ -f assets/icon-48.png ]; then
+    install -Dm644 assets/icon-48.png "$ICON_DIR/48x48/apps/cyberfile.png"
 fi
 if [ -f assets/icon.svg ]; then
     install -Dm644 assets/icon.svg "$ICON_DIR/scalable/apps/cyberfile.svg"
