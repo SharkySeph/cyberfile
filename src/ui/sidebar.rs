@@ -38,7 +38,7 @@ impl CyberFile {
                     if let Some(path) = dir {
                         let is_current = self.current_path == *path;
                         let text = RichText::new(*label)
-                            .color(if is_current { t.primary() } else { t.text_primary() })
+                            .color(if is_current { t.text_primary() } else { t.text_primary() })
                             .monospace()
                             .size(12.5);
 
@@ -77,7 +77,7 @@ impl CyberFile {
 
                         ui.horizontal(|ui| {
                             let text = RichText::new(format!("▪ {}", label))
-                                .color(if is_current { t.primary() } else { t.text_primary() })
+                                .color(if is_current { t.text_primary() } else { t.text_primary() })
                                 .monospace()
                                 .size(12.0);
 

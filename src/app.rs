@@ -173,6 +173,7 @@ pub struct CyberFile {
 
     // ── Hex Grid Zoom ────────────────────────────────────
     pub(crate) hex_zoom: f32,
+    pub(crate) hex_pan_offset: egui::Vec2,
 
     // ── Thumbnail Cache ──────────────────────────────────
     pub(crate) thumbnail_cache: HashMap<PathBuf, egui::TextureHandle>,
@@ -362,6 +363,7 @@ impl CyberFile {
             disk_info_last_refresh: Instant::now(),
             disk_info_path: PathBuf::new(),
             hex_zoom: 1.0,
+            hex_pan_offset: egui::Vec2::ZERO,
             thumbnail_cache: HashMap::new(),
             thumbnail_failed: HashSet::new(),
             properties_dialog: false,
@@ -396,7 +398,7 @@ impl CyberFile {
             neon_glow: false,
             chromatic_aberration: false,
             holographic_noise: false,
-            reduced_motion: false,
+            reduced_motion: true,
             high_contrast: false,
             sftp_dialog: false,
             sftp_host: String::new(),
@@ -1357,6 +1359,7 @@ impl CyberFile {
                 }
                 if ctrl && input.key_pressed(egui::Key::Num0) {
                     self.hex_zoom = 1.0;
+                    self.hex_pan_offset = egui::Vec2::ZERO;
                 }
             }
             // Preview panel

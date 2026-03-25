@@ -111,7 +111,7 @@ impl Default for Settings {
             neon_glow: false,
             chromatic_aberration: false,
             holographic_noise: false,
-            reduced_motion: false,
+            reduced_motion: true,
             high_contrast: false,
         }
     }

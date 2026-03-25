@@ -133,10 +133,11 @@ impl CyberFile {
                     false,
                     RichText::new(" ⊙ ").color(t.text_dim()).monospace().size(10.0),
                 )
-                .on_hover_text("Reset zoom (Ctrl+0)")
+                .on_hover_text("Reset zoom & pan (Ctrl+0)")
                 .clicked()
             {
                 self.hex_zoom = 1.0;
+                self.hex_pan_offset = egui::Vec2::ZERO;
             }
         });
         ui.add_space(4.0);
@@ -176,13 +177,14 @@ impl CyberFile {
 
         // Hex geometry — flat-top hexagons, scaled by zoom
         let hex_radius: f32 = 56.0 * zoom;
-        let hex_h = hex_radius * 3.0_f32.sqrt();
+        let _hex_h = hex_radius * 3.0_f32.sqrt();
 
         // Compute circular positions
         let positions = circular_hex_positions(cells.len(), hex_radius);
 
         egui::ScrollArea::both()
             .auto_shrink(false)
+            .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
             .show(ui, |ui| {
                 // Handle Ctrl+scroll zoom
                 let scroll_delta = ui.input(|i| {
@@ -221,22 +223,32 @@ impl CyberFile {
                     max_y = max_y.max(py);
                 }
 
-                let padding = hex_radius + 20.0;
-                let total_width = (max_x - min_x) + padding * 2.0;
-                let total_height = (max_y - min_y) + padding * 2.0;
+                let padding = hex_radius * 1.5 + 30.0;
+                let content_width = (max_x - min_x) + padding * 2.0;
+                let content_height = (max_y - min_y) + padding * 2.0;
 
                 let available_width = ui.available_width();
-                let canvas_width = total_width.max(available_width);
-                let canvas_height = total_height.max(hex_h * 3.0);
+                let available_height = ui.available_height();
+                let canvas_width = content_width.max(available_width);
+                let canvas_height = content_height.max(available_height);
 
-                let center_x = canvas_width / 2.0;
-                let center_y = canvas_height / 2.0;
+                let center_x = canvas_width / 2.0 + self.hex_pan_offset.x;
+                let center_y = canvas_height / 2.0 + self.hex_pan_offset.y;
 
-                // Reserve space and get painter
+                // Reserve space and get painter — use click + drag sense
                 let (canvas_rect, canvas_response) = ui.allocate_exact_size(
                     egui::vec2(canvas_width, canvas_height),
-                    egui::Sense::click(),
+                    egui::Sense::click_and_drag(),
                 );
+
+                // Drag-to-pan
+                if canvas_response.dragged_by(egui::PointerButton::Middle)
+                    || (canvas_response.dragged_by(egui::PointerButton::Primary)
+                        && ui.input(|i| i.modifiers.shift))
+                {
+                    self.hex_pan_offset += canvas_response.drag_delta();
+                }
+
                 let painter = ui.painter_at(canvas_rect);
                 let origin = canvas_rect.min;
 
@@ -291,7 +303,7 @@ impl CyberFile {
                             t.accent().r(),
                             t.accent().g(),
                             t.accent().b(),
-                            30,
+                            50,
                         )
                     } else {
                         t.surface()

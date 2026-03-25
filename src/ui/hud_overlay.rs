@@ -40,7 +40,7 @@ impl CyberFile {
                     t.primary().r(),
                     t.primary().g(),
                     t.primary().b(),
-                    100,
+                    180,
                 ),
             );
 
@@ -55,7 +55,7 @@ impl CyberFile {
                         t.border_dim().r(),
                         t.border_dim().g(),
                         t.border_dim().b(),
-                        80,
+                        120,
                     ),
                 ),
                 StrokeKind::Outside,
@@ -71,7 +71,7 @@ impl CyberFile {
                     t.primary().r(),
                     t.primary().g(),
                     t.primary().b(),
-                    60,
+                    100,
                 ),
             );
 
@@ -84,7 +84,7 @@ impl CyberFile {
                     t.text_dim().r(),
                     t.text_dim().g(),
                     t.text_dim().b(),
-                    80,
+                    160,
                 ),
             );
         }
@@ -135,7 +135,7 @@ impl CyberFile {
                             t.primary().r(),
                             t.primary().g(),
                             t.primary().b(),
-                            120,
+                            180,
                         ),
                     ),
                     (
@@ -144,7 +144,7 @@ impl CyberFile {
                             t.success().r(),
                             t.success().g(),
                             t.success().b(),
-                            120,
+                            180,
                         ),
                     ),
                     (
@@ -153,7 +153,7 @@ impl CyberFile {
                             t.accent().r(),
                             t.accent().g(),
                             t.accent().b(),
-                            120,
+                            180,
                         ),
                     ),
                     (
@@ -162,7 +162,7 @@ impl CyberFile {
                             t.warning().r(),
                             t.warning().g(),
                             t.warning().b(),
-                            120,
+                            180,
                         ),
                     ),
                     (
@@ -171,7 +171,7 @@ impl CyberFile {
                             t.text_dim().r(),
                             t.text_dim().g(),
                             t.text_dim().b(),
-                            80,
+                            140,
                         ),
                     ),
                 ];
@@ -207,7 +207,7 @@ impl CyberFile {
                         t.text_dim().r(),
                         t.text_dim().g(),
                         t.text_dim().b(),
-                        100,
+                        180,
                     ),
                 );
 
@@ -221,7 +221,7 @@ impl CyberFile {
                         t.border_dim().r(),
                         t.border_dim().g(),
                         t.border_dim().b(),
-                        100,
+                        160,
                     ),
                 );
             }
@@ -260,7 +260,7 @@ impl CyberFile {
                     t.text_dim().r(),
                     t.text_dim().g(),
                     t.text_dim().b(),
-                    80,
+                    160,
                 ),
             );
 
@@ -277,14 +277,14 @@ impl CyberFile {
                         level_color.r(),
                         level_color.g(),
                         level_color.b(),
-                        100,
+                        160,
                     )
                 } else {
                     Color32::from_rgba_premultiplied(
                         t.border_dim().r(),
                         t.border_dim().g(),
                         t.border_dim().b(),
-                        40,
+                        60,
                     )
                 };
                 painter.rect_filled(
@@ -303,7 +303,7 @@ impl CyberFile {
                     level_color.r(),
                     level_color.g(),
                     level_color.b(),
-                    90,
+                    160,
                 ),
             );
         }

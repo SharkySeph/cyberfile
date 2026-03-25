@@ -1,6 +1,7 @@
 {
     "chat.tools.terminal.autoApprove": {
         "cargo build": true,
-        "cargo check": true
+        "cargo check": true,
+        "./install.sh": true
     }
 }

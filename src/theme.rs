@@ -258,19 +258,20 @@ impl CyberTheme {
 
     pub fn selection_bg(&self) -> Color32 {
         match self {
-            Self::NightCity => Color32::from_rgba_premultiplied(0xFF, 0x20, 0x79, 0x25),
-            Self::Section9 => Color32::from_rgba_premultiplied(0x9B, 0x59, 0xB6, 0x25),
-            Self::MagiSystem => Color32::from_rgba_premultiplied(0xFF, 0x6B, 0x00, 0x25),
-            Self::Gibson => Color32::from_rgba_premultiplied(0x00, 0xFF, 0x41, 0x25),
-            Self::Tyrell => Color32::from_rgba_premultiplied(0xD4, 0xA5, 0x20, 0x25),
-            Self::Akira => Color32::from_rgba_premultiplied(0xFF, 0x17, 0x44, 0x25),
-            Self::Wintermute => Color32::from_rgba_premultiplied(0xC0, 0xC8, 0xD8, 0x25),
-            Self::Outrun => Color32::from_rgba_premultiplied(0x00, 0xBF, 0xFF, 0x25),
+            Self::NightCity => Color32::from_rgba_premultiplied(0xFF, 0x20, 0x79, 0x66),
+            Self::Section9 => Color32::from_rgba_premultiplied(0x9B, 0x59, 0xB6, 0x66),
+            Self::MagiSystem => Color32::from_rgba_premultiplied(0xFF, 0x6B, 0x00, 0x66),
+            Self::Gibson => Color32::from_rgba_premultiplied(0x00, 0xFF, 0x41, 0x66),
+            Self::Tyrell => Color32::from_rgba_premultiplied(0xD4, 0xA5, 0x20, 0x66),
+            Self::Akira => Color32::from_rgba_premultiplied(0xFF, 0x17, 0x44, 0x66),
+            Self::Wintermute => Color32::from_rgba_premultiplied(0xC0, 0xC8, 0xD8, 0x66),
+            Self::Outrun => Color32::from_rgba_premultiplied(0x00, 0xBF, 0xFF, 0x66),
         }
     }
 }
 
 // ── Legacy Color Constants (Night City defaults) ───────────────
+#[allow(dead_code)]
 pub const CYAN: Color32 = Color32::from_rgb(0x00, 0xF0, 0xFF);
 #[allow(dead_code)]
 pub const CYAN_DIM: Color32 = Color32::from_rgb(0x00, 0x80, 0x99);
@@ -278,6 +279,7 @@ pub const CYAN_DIM: Color32 = Color32::from_rgb(0x00, 0x80, 0x99);
 pub const MAGENTA: Color32 = Color32::from_rgb(0xFF, 0x20, 0x79);
 #[allow(dead_code)]
 pub const YELLOW: Color32 = Color32::from_rgb(0xF7, 0xF3, 0x2A);
+#[allow(dead_code)]
 pub const BG_DARK: Color32 = Color32::from_rgb(0x0A, 0x0A, 0x0F);
 #[allow(dead_code)]
 pub const SURFACE: Color32 = Color32::from_rgb(0x0D, 0x11, 0x17);
@@ -285,9 +287,11 @@ pub const SURFACE: Color32 = Color32::from_rgb(0x0D, 0x11, 0x17);
 pub const SURFACE_RAISED: Color32 = Color32::from_rgb(0x12, 0x18, 0x22);
 #[allow(dead_code)]
 pub const DANGER: Color32 = Color32::from_rgb(0xFF, 0x33, 0x33);
+#[allow(dead_code)]
 pub const SUCCESS: Color32 = Color32::from_rgb(0x39, 0xFF, 0x14);
 #[allow(dead_code)]
 pub const TEXT_PRIMARY: Color32 = Color32::from_rgb(0xE0, 0xE0, 0xE8);
+#[allow(dead_code)]
 pub const TEXT_DIM: Color32 = Color32::from_rgb(0x4A, 0x7A, 0x7F);
 #[allow(dead_code)]
 pub const BORDER_DIM: Color32 = Color32::from_rgb(0x1A, 0x2A, 0x33);

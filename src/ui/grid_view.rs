@@ -149,7 +149,7 @@ impl CyberFile {
                                         t.accent().r(),
                                         t.accent().g(),
                                         t.accent().b(),
-                                        25,
+                                        50,
                                     ),
                                 )
                             } else {
