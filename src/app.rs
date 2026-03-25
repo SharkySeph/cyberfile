@@ -10,7 +10,16 @@ use std::time::{Duration, Instant};
 
 use crate::config::Settings;
 use crate::filesystem::{self, EntryKind, FileEntry, SortColumn};
+use crate::integrations::journald::LogChannel;
 use crate::integrations::media::MediaState;
+use crate::launcher::{
+    self, CommandSurfaceMode, LauncherAction, LauncherEntry, LoadedProtocolManifest,
+};
+use crate::scenes::{
+    slugify_scene_name, MissionScene, MissionSceneOverlayState, MissionSceneRemoteState,
+    MissionSceneSplitState, MissionSceneTab, MissionSceneTerminalState, RecentSceneRecord,
+    SceneStore,
+};
 use crate::theme::{self, CyberTheme};
 
 // ── View Modes ────────────────────────────────────────────────
@@ -52,10 +61,15 @@ type SharedSftpConnection = Arc<Mutex<crate::integrations::sftp::SftpConnection>
 
 enum BackgroundTaskResult {
     TerminalFinished {
+        job_id: u64,
         lines: Vec<String>,
         duration: Duration,
+        success: bool,
     },
-    TerminalSpawnFailed { message: String },
+    TerminalSpawnFailed {
+        job_id: u64,
+        message: String,
+    },
     ContentSearchFinished {
         request_id: u64,
         query: String,
@@ -77,10 +91,58 @@ enum BackgroundTaskResult {
         request_id: u64,
         file_name: String,
     },
+    SftpUploaded {
+        request_id: u64,
+        file_names: Vec<String>,
+    },
     SftpFailed {
         request_id: u64,
         message: String,
     },
+}
+
+#[derive(Debug, Clone)]
+enum StartupSceneRequest {
+    ResumeSession,
+    RestoreScene(String),
+    FreshStart,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProcessSortMode {
+    Cpu,
+    Memory,
+    Name,
+    Pid,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OperatorJobState {
+    Running,
+    Completed,
+    Failed,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct OperatorJob {
+    pub id: u64,
+    pub label: String,
+    pub command: String,
+    pub cwd: PathBuf,
+    pub started_at: String,
+    pub finished_at: Option<String>,
+    pub duration_ms: Option<u128>,
+    pub status: OperatorJobState,
+    pub output_tail: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum SignalDeckTab {
+    #[default]
+    Audio,
+    Clipboard,
+    Notifications,
+    Power,
 }
 
 // ── Sound Types ───────────────────────────────────────────
@@ -116,6 +178,11 @@ pub struct CyberFile {
     // ── Command Bar ──────────────────────────────────────
     pub(crate) command_bar_text: String,
     pub(crate) command_bar_active: bool,
+    pub(crate) command_surface_mode: CommandSurfaceMode,
+    pub(crate) launcher_results: Vec<LauncherEntry>,
+    pub(crate) launcher_selected: usize,
+    pub(crate) focus_command_bar_next_frame: bool,
+    pub(crate) local_protocol_manifest: Option<LoadedProtocolManifest>,
 
     // ── Rename ───────────────────────────────────────────
     pub(crate) rename_index: Option<usize>,
@@ -170,7 +237,41 @@ pub struct CyberFile {
 
     // ── Settings Panel ───────────────────────────────────
     pub(crate) settings_panel_open: bool,
+    pub(crate) scene_manager_open: bool,
+    pub(crate) process_matrix_open: bool,
+    pub(crate) service_deck_open: bool,
+    pub(crate) log_viewer_open: bool,
+    pub(crate) scene_manager_selected_id: Option<String>,
+    pub(crate) scene_capture_name: String,
+    pub(crate) scene_store: SceneStore,
+    startup_scene_request: Option<StartupSceneRequest>,
     pub(crate) ui_scale_preview: f32,
+    pub(crate) process_filter_text: String,
+    pub(crate) process_sort_mode: ProcessSortMode,
+    pub(crate) process_entries: Vec<crate::integrations::processes::ProcessEntry>,
+    pub(crate) process_selected_pid: Option<i32>,
+    pub(crate) process_last_refresh: Instant,
+    pub(crate) service_filter_text: String,
+    pub(crate) service_entries: Vec<crate::integrations::services::ServiceEntry>,
+    pub(crate) service_selected_unit: Option<String>,
+    pub(crate) service_status_output: Vec<String>,
+    pub(crate) service_last_refresh: Instant,
+    pub(crate) log_selected_channel_id: Option<String>,
+    pub(crate) log_output: Vec<String>,
+    pub(crate) log_last_refresh: Instant,
+
+    // ── Signal Deck (Stage 4) ────────────────────────────
+    pub(crate) signal_deck_open: bool,
+    pub(crate) signal_deck_tab: SignalDeckTab,
+    pub(crate) audio_snapshot: crate::integrations::audio::AudioSnapshot,
+    pub(crate) audio_volume_slider: u32,
+    pub(crate) audio_last_refresh: Instant,
+    pub(crate) power_info: crate::integrations::audio::PowerInfo,
+    pub(crate) brightness_percent: Option<u32>,
+    pub(crate) clipboard_entries: Vec<crate::integrations::audio::ClipboardEntry>,
+    pub(crate) clipboard_last_refresh: Instant,
+    pub(crate) notification_entries: Vec<crate::integrations::audio::NotificationEntry>,
+    pub(crate) notification_last_refresh: Instant,
 
     // ── Settings ─────────────────────────────────────────
     pub(crate) settings: Settings,
@@ -267,7 +368,11 @@ pub struct CyberFile {
     // ── Terminal Panel ("NEURAL JACK PORT") ──────────────
     pub(crate) terminal_panel_visible: bool,
     pub(crate) terminal_input: String,
+    pub(crate) terminal_history: Vec<String>,
     pub(crate) terminal_output: Vec<String>,
+    pub(crate) operator_jobs: Vec<OperatorJob>,
+    pub(crate) operator_job_selected_id: Option<u64>,
+    pub(crate) next_operator_job_id: u64,
     pub(crate) terminal_task_running: bool,
     pub(crate) terminal_running_command: Option<String>,
     pub(crate) terminal_started_at: Option<Instant>,
@@ -307,7 +412,12 @@ pub struct CyberFile {
 
 impl CyberFile {
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        let settings = Settings::load();
+        let mut settings = Settings::load();
+        let seeded_log_channels = settings.log_channels.is_empty();
+        settings.ensure_default_log_channels();
+        if seeded_log_channels {
+            settings.save();
+        }
         let (background_tx, background_rx) = mpsc::channel();
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
         let theme = CyberTheme::from_id(&settings.theme);
@@ -351,12 +461,25 @@ impl CyberFile {
         sys.refresh_cpu_all();
         sys.refresh_memory();
         let disks = sysinfo::Disks::new_with_refreshed_list();
+        let local_protocol_manifest = launcher::load_local_protocol_manifest(&start_path);
+        let mut scene_store = SceneStore::load(&settings.saved_scenes);
+        scene_store.ensure_default_presets(&start_path);
+
+        if !settings.saved_scenes.is_empty() {
+            settings.saved_scenes.clear();
+            settings.save();
+        }
 
         let sound_enabled = settings.sound_enabled;
         let ui_scale_preview = settings.font_size;
+        let startup_scene_request = if scene_store.session_scene.is_some() {
+            Some(StartupSceneRequest::ResumeSession)
+        } else {
+            Some(StartupSceneRequest::FreshStart)
+        };
 
         Self {
-            current_path: start_path,
+            current_path: start_path.clone(),
             entries: Vec::new(),
             selected: None,
             multi_selected: HashSet::new(),
@@ -369,8 +492,13 @@ impl CyberFile {
             context_menu_open: false,
             context_menu_pos: egui::pos2(0.0, 0.0),
             data_rain_cols: (0..80).map(|i| (i as f32 * 7.77) % 100.0).collect(),
-            command_bar_text: String::new(),
+            command_bar_text: start_path.to_string_lossy().to_string(),
             command_bar_active: false,
+            command_surface_mode: CommandSurfaceMode::Path,
+            launcher_results: Vec::new(),
+            launcher_selected: 0,
+            focus_command_bar_next_frame: false,
+            local_protocol_manifest,
             rename_index: None,
             rename_text: String::new(),
             new_folder_dialog: false,
@@ -399,7 +527,39 @@ impl CyberFile {
             cpu_history: Vec::new(),
             mem_history: Vec::new(),
             settings_panel_open: false,
+            scene_manager_open: false,
+            process_matrix_open: false,
+            service_deck_open: false,
+            log_viewer_open: false,
+            scene_manager_selected_id: scene_store.saved_scenes.first().map(|scene| scene.id.clone()),
+            scene_capture_name: String::new(),
+            scene_store,
+            startup_scene_request,
             ui_scale_preview,
+            process_filter_text: String::new(),
+            process_sort_mode: ProcessSortMode::Cpu,
+            process_entries: Vec::new(),
+            process_selected_pid: None,
+            process_last_refresh: Instant::now(),
+            service_filter_text: String::new(),
+            service_entries: Vec::new(),
+            service_selected_unit: None,
+            service_status_output: Vec::new(),
+            service_last_refresh: Instant::now(),
+            log_selected_channel_id: settings.log_channels.first().map(|channel| channel.id.clone()),
+            log_output: Vec::new(),
+            log_last_refresh: Instant::now(),
+            signal_deck_open: false,
+            signal_deck_tab: SignalDeckTab::Audio,
+            audio_snapshot: crate::integrations::audio::AudioSnapshot::default(),
+            audio_volume_slider: 50,
+            audio_last_refresh: Instant::now(),
+            power_info: crate::integrations::audio::PowerInfo::default(),
+            brightness_percent: None,
+            clipboard_entries: Vec::new(),
+            clipboard_last_refresh: Instant::now(),
+            notification_entries: Vec::new(),
+            notification_last_refresh: Instant::now(),
             settings,
             view_mode: ViewMode::List,
             tabs: saved_tabs,
@@ -452,7 +612,11 @@ impl CyberFile {
             dragging: false,
             terminal_panel_visible: false,
             terminal_input: String::new(),
+            terminal_history: Vec::new(),
             terminal_output: Vec::new(),
+            operator_jobs: Vec::new(),
+            operator_job_selected_id: None,
+            next_operator_job_id: 1,
             terminal_task_running: false,
             terminal_running_command: None,
             terminal_started_at: None,
@@ -488,10 +652,1007 @@ impl CyberFile {
         }
     }
 
+    fn sync_command_bar_with_current_path(&mut self) {
+        if self.command_surface_mode == CommandSurfaceMode::Path {
+            self.command_bar_text = self.current_path.to_string_lossy().to_string();
+        }
+    }
+
+    pub(crate) fn set_command_surface_mode(&mut self, mode: CommandSurfaceMode) {
+        if self.command_surface_mode == mode {
+            return;
+        }
+
+        self.command_surface_mode = mode;
+        match mode {
+            CommandSurfaceMode::Path => {
+                self.command_bar_text = self.current_path.to_string_lossy().to_string();
+            }
+            CommandSurfaceMode::Protocol => {
+                if self.command_bar_text == self.current_path.to_string_lossy() {
+                    self.command_bar_text.clear();
+                }
+            }
+        }
+        self.launcher_selected = 0;
+        self.refresh_launcher_results();
+        self.focus_command_bar_next_frame = true;
+    }
+
+    fn refresh_local_protocol_manifest(&mut self) {
+        self.local_protocol_manifest = launcher::load_local_protocol_manifest(&self.current_path);
+    }
+
+    pub(crate) fn save_scene_store(&self) {
+        self.scene_store.save();
+    }
+
+    pub(crate) fn open_process_matrix(&mut self) {
+        self.process_matrix_open = true;
+        self.refresh_process_matrix(true);
+    }
+
+    pub(crate) fn open_service_deck(&mut self) {
+        self.service_deck_open = true;
+        self.refresh_service_deck(true);
+    }
+
+    pub(crate) fn open_log_viewer(&mut self) {
+        self.log_viewer_open = true;
+        self.refresh_log_viewer(true);
+    }
+
+    pub(crate) fn refresh_process_matrix(&mut self, force: bool) {
+        if !force && self.process_last_refresh.elapsed().as_secs() < 3 {
+            return;
+        }
+
+        match crate::integrations::processes::collect_processes(240) {
+            Ok(entries) => {
+                self.process_entries = entries;
+                if self
+                    .process_selected_pid
+                    .map(|pid| self.process_entries.iter().any(|entry| entry.pid == pid))
+                    .unwrap_or(false)
+                    == false
+                {
+                    self.process_selected_pid = self.process_entries.first().map(|entry| entry.pid);
+                }
+                self.process_last_refresh = Instant::now();
+            }
+            Err(error) => self.set_error(error),
+        }
+    }
+
+    pub(crate) fn filtered_process_entries(&self) -> Vec<crate::integrations::processes::ProcessEntry> {
+        let query = self.process_filter_text.trim().to_lowercase();
+        let mut entries: Vec<_> = self
+            .process_entries
+            .iter()
+            .filter(|entry| {
+                query.is_empty()
+                    || entry.name.to_lowercase().contains(&query)
+                    || entry.command.to_lowercase().contains(&query)
+                    || entry.cwd.to_lowercase().contains(&query)
+                    || entry.pid.to_string().contains(&query)
+            })
+            .cloned()
+            .collect();
+
+        entries.sort_by(|left, right| match self.process_sort_mode {
+            ProcessSortMode::Cpu => right
+                .cpu_percent
+                .partial_cmp(&left.cpu_percent)
+                .unwrap_or(std::cmp::Ordering::Equal),
+            ProcessSortMode::Memory => right.memory_kib.cmp(&left.memory_kib),
+            ProcessSortMode::Name => left.name.cmp(&right.name),
+            ProcessSortMode::Pid => left.pid.cmp(&right.pid),
+        });
+        entries
+    }
+
+    pub(crate) fn terminate_selected_process(&mut self, force: bool) {
+        let Some(pid) = self.process_selected_pid else {
+            return;
+        };
+        match crate::integrations::processes::terminate_process(pid, force) {
+            Ok(()) => {
+                self.status_message = if force {
+                    format!("Process terminated: {} (KILL)", pid)
+                } else {
+                    format!("Process terminated: {} (TERM)", pid)
+                };
+                self.refresh_process_matrix(true);
+            }
+            Err(error) => self.set_error(error),
+        }
+    }
+
+    pub(crate) fn refresh_service_deck(&mut self, force: bool) {
+        if !force && self.service_last_refresh.elapsed().as_secs() < 4 {
+            return;
+        }
+
+        match crate::integrations::services::list_user_services(240) {
+            Ok(entries) => {
+                self.service_entries = entries;
+                if self.service_selected_unit.is_none() {
+                    self.service_selected_unit = self
+                        .service_entries
+                        .first()
+                        .map(|service| service.unit.clone());
+                }
+                if let Some(selected) = self.service_selected_unit.clone() {
+                    self.inspect_service_unit(&selected);
+                }
+                self.service_last_refresh = Instant::now();
+            }
+            Err(error) => self.set_error(error),
+        }
+    }
+
+    pub(crate) fn filtered_service_entries(&self) -> Vec<crate::integrations::services::ServiceEntry> {
+        let query = self.service_filter_text.trim().to_lowercase();
+        self.service_entries
+            .iter()
+            .filter(|entry| {
+                query.is_empty()
+                    || entry.unit.to_lowercase().contains(&query)
+                    || entry.description.to_lowercase().contains(&query)
+                    || entry.active.to_lowercase().contains(&query)
+                    || entry.sub.to_lowercase().contains(&query)
+            })
+            .cloned()
+            .collect()
+    }
+
+    pub(crate) fn inspect_service_unit(&mut self, unit: &str) {
+        match crate::integrations::services::inspect_user_service(unit) {
+            Ok(output) => {
+                self.service_status_output = output.lines().map(|line| line.to_string()).collect();
+            }
+            Err(error) => {
+                self.service_status_output = vec![format!("[ERR] {}", error)];
+            }
+        }
+    }
+
+    pub(crate) fn control_selected_service(&mut self, action: crate::integrations::services::ServiceAction) {
+        let Some(unit) = self.service_selected_unit.clone() else {
+            return;
+        };
+        match crate::integrations::services::control_user_service(&unit, action) {
+            Ok(message) => {
+                self.status_message = format!("Service deck: {}", message);
+                self.refresh_service_deck(true);
+            }
+            Err(error) => self.set_error(error),
+        }
+    }
+
+    pub(crate) fn save_service_log_channel(&mut self, unit: &str) {
+        let channel = crate::integrations::journald::service_channel(unit);
+        if !self.settings.log_channels.iter().any(|existing| existing.id == channel.id) {
+            self.settings.log_channels.push(channel.clone());
+            self.settings.save();
+        }
+        self.log_selected_channel_id = Some(channel.id);
+        self.open_log_viewer();
+    }
+
+    pub(crate) fn remove_log_channel(&mut self, channel_id: &str) {
+        if channel_id == "journal.user" || channel_id == "journal.warnings" {
+            self.set_error("Default log channels cannot be removed".into());
+            return;
+        }
+
+        self.settings.log_channels.retain(|channel| channel.id != channel_id);
+        self.log_selected_channel_id = self.settings.log_channels.first().map(|channel| channel.id.clone());
+        self.settings.save();
+        self.refresh_log_viewer(true);
+    }
+
+    pub(crate) fn refresh_log_viewer(&mut self, force: bool) {
+        if !force && self.log_last_refresh.elapsed().as_secs() < 4 {
+            return;
+        }
+
+        if self.log_selected_channel_id.is_none() {
+            self.log_selected_channel_id = self.settings.log_channels.first().map(|channel| channel.id.clone());
+        }
+
+        let Some(channel_id) = self.log_selected_channel_id.clone() else {
+            self.log_output = vec!["No log channels configured".to_string()];
+            return;
+        };
+
+        let Some(channel) = self
+            .settings
+            .log_channels
+            .iter()
+            .find(|channel| channel.id == channel_id)
+            .cloned()
+        else {
+            self.log_output = vec!["Selected log channel no longer exists".to_string()];
+            return;
+        };
+
+        match crate::integrations::journald::read_channel(&channel) {
+            Ok(output) => {
+                self.log_output = if output.is_empty() {
+                    vec!["No journal output for selected channel".to_string()]
+                } else {
+                    output
+                };
+                self.log_last_refresh = Instant::now();
+            }
+            Err(error) => {
+                self.log_output = vec![format!("[ERR] {}", error)];
+            }
+        }
+    }
+
+    // ── Signal Deck (Stage 4) ────────────────────────────
+
+    pub(crate) fn open_signal_deck(&mut self) {
+        self.signal_deck_open = true;
+        self.refresh_audio_snapshot(true);
+        self.refresh_power_info(true);
+        self.refresh_clipboard(true);
+        self.refresh_notifications(true);
+        self.brightness_percent = crate::integrations::audio::get_brightness_percent();
+    }
+
+    pub(crate) fn refresh_audio_snapshot(&mut self, force: bool) {
+        if !force && self.audio_last_refresh.elapsed().as_secs() < 3 {
+            return;
+        }
+        self.audio_snapshot = crate::integrations::audio::collect_audio_snapshot();
+        self.audio_volume_slider = self.audio_snapshot.default_sink_volume;
+        self.audio_last_refresh = Instant::now();
+    }
+
+    pub(crate) fn refresh_power_info(&mut self, force: bool) {
+        if !force && self.audio_last_refresh.elapsed().as_secs() < 10 {
+            return;
+        }
+        self.power_info = crate::integrations::audio::collect_power_info();
+        self.brightness_percent = crate::integrations::audio::get_brightness_percent();
+    }
+
+    pub(crate) fn refresh_clipboard(&mut self, force: bool) {
+        if !force && self.clipboard_last_refresh.elapsed().as_secs() < 5 {
+            return;
+        }
+        self.clipboard_entries = crate::integrations::audio::read_clipboard_entries(30);
+        self.clipboard_last_refresh = Instant::now();
+    }
+
+    pub(crate) fn refresh_notifications(&mut self, force: bool) {
+        if !force && self.notification_last_refresh.elapsed().as_secs() < 5 {
+            return;
+        }
+        self.notification_entries = crate::integrations::audio::read_notification_history(40);
+        self.notification_last_refresh = Instant::now();
+    }
+
+    fn start_operator_job(&mut self, command: &str, label: &str, cwd: &std::path::Path) -> u64 {
+        let job_id = self.next_operator_job_id;
+        self.next_operator_job_id += 1;
+        let job = OperatorJob {
+            id: job_id,
+            label: label.to_string(),
+            command: command.to_string(),
+            cwd: cwd.to_path_buf(),
+            started_at: chrono::Local::now().to_rfc3339(),
+            finished_at: None,
+            duration_ms: None,
+            status: OperatorJobState::Running,
+            output_tail: Vec::new(),
+        };
+        self.operator_jobs.insert(0, job);
+        if self.operator_jobs.len() > 24 {
+            self.operator_jobs.truncate(24);
+        }
+        self.operator_job_selected_id = Some(job_id);
+        job_id
+    }
+
+    fn finish_operator_job(
+        &mut self,
+        job_id: u64,
+        status: OperatorJobState,
+        lines: Vec<String>,
+        duration: Option<Duration>,
+    ) {
+        if let Some(job) = self.operator_jobs.iter_mut().find(|job| job.id == job_id) {
+            job.status = status;
+            job.finished_at = Some(chrono::Local::now().to_rfc3339());
+            job.duration_ms = duration.map(|duration| duration.as_millis());
+            let mut tail: Vec<String> = lines.into_iter().rev().take(60).collect();
+            tail.reverse();
+            job.output_tail = tail;
+        }
+    }
+
+    pub(crate) fn restart_operator_job(&mut self, job_id: u64) {
+        let Some(job) = self.operator_jobs.iter().find(|job| job.id == job_id).cloned() else {
+            self.set_error(format!("Operator job not found: {}", job_id));
+            return;
+        };
+        self.run_embedded_shell_command_at(job.command, Some(job.label), job.cwd);
+    }
+
+    fn selected_log_channel(&self) -> Option<LogChannel> {
+        let channel_id = self.log_selected_channel_id.as_ref()?;
+        self.settings
+            .log_channels
+            .iter()
+            .find(|channel| &channel.id == channel_id)
+            .cloned()
+    }
+
+    pub(crate) fn ordered_scene_indices(&self) -> Vec<usize> {
+        let mut indices: Vec<usize> = (0..self.scene_store.saved_scenes.len()).collect();
+        indices.sort_by(|left, right| {
+            let left_scene = &self.scene_store.saved_scenes[*left];
+            let right_scene = &self.scene_store.saved_scenes[*right];
+            right_scene
+                .pinned
+                .cmp(&left_scene.pinned)
+                .then_with(|| right_scene.updated_at.cmp(&left_scene.updated_at))
+        });
+        indices
+    }
+
+    pub(crate) fn open_scene_manager(&mut self) {
+        self.scene_manager_open = true;
+        if self.scene_manager_selected_id.is_none() {
+            self.scene_manager_selected_id = self
+                .scene_store
+                .saved_scenes
+                .first()
+                .map(|scene| scene.id.clone());
+        }
+    }
+
+    pub(crate) fn has_session_resume(&self) -> bool {
+        self.scene_store.session_scene.is_some()
+    }
+
+    pub(crate) fn boot_scene_slots(&self) -> Vec<RecentSceneRecord> {
+        let mut slots = Vec::new();
+        let mut seen = HashSet::new();
+
+        for index in self.ordered_scene_indices() {
+            let scene = &self.scene_store.saved_scenes[index];
+            if scene.pinned && seen.insert(scene.id.clone()) {
+                slots.push(RecentSceneRecord::from_scene(scene, scene.updated_at.clone()));
+            }
+        }
+
+        for record in &self.scene_store.recent_scenes {
+            if !seen.insert(record.scene_id.clone()) {
+                continue;
+            }
+            if let Some(scene) = self
+                .scene_store
+                .saved_scenes
+                .iter()
+                .find(|scene| scene.id == record.scene_id)
+            {
+                slots.push(RecentSceneRecord::from_scene(scene, record.last_used_at.clone()));
+            }
+        }
+
+        for index in self.ordered_scene_indices() {
+            let scene = &self.scene_store.saved_scenes[index];
+            if seen.insert(scene.id.clone()) {
+                slots.push(RecentSceneRecord::from_scene(scene, scene.updated_at.clone()));
+            }
+        }
+
+        slots.truncate(4);
+        slots
+    }
+
+    pub(crate) fn queue_boot_resume(&mut self) {
+        self.startup_scene_request = Some(StartupSceneRequest::ResumeSession);
+        self.boot_complete = true;
+    }
+
+    pub(crate) fn queue_boot_scene_restore(&mut self, scene_id: String) {
+        self.startup_scene_request = Some(StartupSceneRequest::RestoreScene(scene_id));
+        self.boot_complete = true;
+    }
+
+    pub(crate) fn queue_boot_fresh_start(&mut self) {
+        self.startup_scene_request = Some(StartupSceneRequest::FreshStart);
+        self.boot_complete = true;
+    }
+
+    fn process_startup_scene_request(&mut self) {
+        match self.startup_scene_request.take() {
+            Some(StartupSceneRequest::ResumeSession) => {
+                if let Some(scene) = self.scene_store.session_scene.clone() {
+                    self.restore_scene_snapshot(scene, false, true);
+                } else {
+                    self.load_current_directory();
+                }
+            }
+            Some(StartupSceneRequest::RestoreScene(scene_id)) => self.restore_scene(&scene_id),
+            Some(StartupSceneRequest::FreshStart) => self.load_current_directory(),
+            None => {
+                if self.entries.is_empty() {
+                    self.load_current_directory();
+                }
+            }
+        }
+    }
+
+    fn record_recent_scene_use(&mut self, scene: &MissionScene) {
+        let record = RecentSceneRecord::from_scene(scene, chrono::Local::now().to_rfc3339());
+        self.scene_store
+            .recent_scenes
+            .retain(|recent| recent.scene_id != record.scene_id);
+        self.scene_store.recent_scenes.insert(0, record);
+        if self.scene_store.recent_scenes.len() > 8 {
+            self.scene_store.recent_scenes.truncate(8);
+        }
+    }
+
+    fn restore_quick_scene_slot(&mut self, slot_index: usize) {
+        if let Some(scene_id) = self
+            .boot_scene_slots()
+            .get(slot_index)
+            .map(|scene| scene.scene_id.clone())
+        {
+            self.restore_scene(&scene_id);
+        }
+    }
+
+    fn infer_scene_summary(&self, remote: &MissionSceneRemoteState) -> String {
+        let remote_label = if remote.connected {
+            "uplink staged"
+        } else {
+            "local deck"
+        };
+        format!(
+            "{} tabs | {} | {}",
+            self.tabs.len(),
+            self.current_path.display(),
+            remote_label
+        )
+    }
+
+    fn capture_remote_scene_state(&self) -> MissionSceneRemoteState {
+        MissionSceneRemoteState {
+            connected: self.sftp_connection.is_some(),
+            host: self.sftp_host.clone(),
+            port: self.sftp_port.clone(),
+            user: self.sftp_user.clone(),
+            display_name: self.sftp_display_name.clone(),
+            remote_path: self.sftp_remote_path.clone(),
+        }
+    }
+
+    fn capture_terminal_output_tail(&self) -> Vec<String> {
+        let mut output_tail: Vec<String> = self
+            .terminal_output
+            .iter()
+            .rev()
+            .take(40)
+            .cloned()
+            .collect();
+        output_tail.reverse();
+        output_tail
+    }
+
+    fn build_scene_snapshot(
+        &self,
+        scene_id: String,
+        scene_name: String,
+        summary: String,
+        notes: String,
+        pinned: bool,
+        tags: Vec<String>,
+    ) -> MissionScene {
+        let now = chrono::Local::now();
+        MissionScene {
+            id: scene_id,
+            name: scene_name,
+            summary,
+            notes,
+            pinned,
+            tags,
+            current_path: self.current_path.to_string_lossy().to_string(),
+            active_tab: self.active_tab,
+            tabs: self
+                .tabs
+                .iter()
+                .map(|tab| MissionSceneTab {
+                    path: tab.path.to_string_lossy().to_string(),
+                    selected: tab.selected,
+                })
+                .collect(),
+            split: MissionSceneSplitState {
+                active: self.split_pane_active,
+                path: self.split_pane_path.to_string_lossy().to_string(),
+                selected: self.split_pane_selected,
+            },
+            overlays: MissionSceneOverlayState {
+                sidebar_visible: self.sidebar_visible,
+                preview_visible: self.preview_visible,
+                resource_monitor_visible: self.resource_monitor_visible,
+                terminal_panel_visible: self.terminal_panel_visible,
+                settings_panel_open: self.settings_panel_open,
+                process_matrix_visible: self.process_matrix_open,
+                service_deck_visible: self.service_deck_open,
+                log_viewer_visible: self.log_viewer_open,
+                signal_deck_visible: self.signal_deck_open,
+                data_rain_enabled: self.data_rain_enabled,
+            },
+            terminal: MissionSceneTerminalState {
+                input: self.terminal_input.clone(),
+                history: self.terminal_history.iter().rev().take(20).cloned().collect::<Vec<_>>().into_iter().rev().collect(),
+                running_command: self.terminal_running_command.clone(),
+                output_tail: self.capture_terminal_output_tail(),
+            },
+            remote: self.capture_remote_scene_state(),
+            filter_text: self.filter_text.clone(),
+            command_text: self.command_bar_text.clone(),
+            command_mode: self.command_surface_mode.id().to_string(),
+            theme_id: self.current_theme.id().to_string(),
+            view_mode: self.current_view_mode_id().to_string(),
+            updated_at: now.to_rfc3339(),
+        }
+    }
+
+    fn capture_session_scene(&self) -> MissionScene {
+        let remote = self.capture_remote_scene_state();
+        self.build_scene_snapshot(
+            "session.resume".to_string(),
+            "Last Session".to_string(),
+            format!("{} // autosaved session deck", self.infer_scene_summary(&remote)),
+            "Automatically maintained resume point for the active command deck.".to_string(),
+            false,
+            vec!["session".to_string(), "recent".to_string()],
+        )
+    }
+
+    fn sync_session_scene(&mut self) {
+        let snapshot = self.capture_session_scene();
+        let changed = self
+            .scene_store
+            .session_scene
+            .as_ref()
+            .map(|scene| scene != &snapshot)
+            .unwrap_or(true);
+        if changed {
+            self.scene_store.session_scene = Some(snapshot);
+            self.save_scene_store();
+        }
+    }
+
+    pub(crate) fn toggle_scene_pin(&mut self, scene_id: &str) {
+        if let Some(scene) = self
+            .scene_store
+            .saved_scenes
+            .iter_mut()
+            .find(|scene| scene.id == scene_id)
+        {
+            scene.pinned = !scene.pinned;
+            scene.updated_at = chrono::Local::now().to_rfc3339();
+            if let Some(recent) = self
+                .scene_store
+                .recent_scenes
+                .iter_mut()
+                .find(|recent| recent.scene_id == scene_id)
+            {
+                recent.pinned = scene.pinned;
+            }
+            self.save_scene_store();
+        }
+    }
+
+    pub(crate) fn delete_scene(&mut self, scene_id: &str) {
+        self.scene_store.saved_scenes.retain(|scene| scene.id != scene_id);
+        self.scene_store
+            .recent_scenes
+            .retain(|scene| scene.scene_id != scene_id);
+        self.scene_manager_selected_id = self
+            .scene_store
+            .saved_scenes
+            .first()
+            .map(|scene| scene.id.clone());
+        self.save_scene_store();
+        self.refresh_launcher_results();
+    }
+
+    pub(crate) fn refresh_launcher_results(&mut self) {
+        if self.command_surface_mode != CommandSurfaceMode::Protocol {
+            self.launcher_results.clear();
+            self.launcher_selected = 0;
+            return;
+        }
+
+        let mut results = launcher::query_entries(&self.command_bar_text);
+        let mut registry = launcher::builtin_entries(
+            &self.current_path,
+            &self.scene_store.saved_scenes,
+            self.fzf_available,
+        );
+
+        let selected_paths = self.get_selected_paths();
+        let selected_target = selected_paths.first().map(PathBuf::as_path);
+
+        registry.extend(launcher::protocol_entries(
+            &self.settings.protocols,
+            "GLOBAL",
+            "global",
+        ));
+
+        if let Some(local_manifest) = &self.local_protocol_manifest {
+            registry.extend(launcher::protocol_entries(
+                &local_manifest.protocols,
+                &format!("LOCAL // {}", local_manifest.name),
+                "local",
+            ));
+        }
+
+        registry.extend(launcher::app_catalog_entries(
+            &self.settings,
+            &self.current_path,
+            selected_target,
+        ));
+        registry.extend(launcher::file_tool_entries(&selected_paths));
+        registry.extend(launcher::remote_entries(&launcher::RemoteProviderState {
+            connected: self.sftp_connection.is_some(),
+            busy: self.sftp_busy,
+            display_name: &self.sftp_display_name,
+            remote_path: &self.sftp_remote_path,
+            uploadable_count: selected_paths.iter().filter(|path| path.is_file()).count(),
+        }));
+
+        for bookmark in &self.bookmarks {
+            let label = bookmark
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_else(|| bookmark.to_string_lossy().to_string());
+            registry.push(launcher::path_entry(
+                format!("BOOKMARK // {}", label),
+                bookmark.to_string_lossy().to_string(),
+                "BOOKMARKS",
+                bookmark.clone(),
+            ));
+        }
+
+        let query = self.command_bar_text.trim().to_lowercase();
+        if !query.is_empty() {
+            let mut match_count = 0;
+            for entry in &self.entries {
+                if entry.name.to_lowercase().contains(&query) {
+                    let subtitle = if entry.is_dir {
+                        format!("Sector // {}", entry.path.to_string_lossy())
+                    } else {
+                        format!("Construct // {}", entry.path.to_string_lossy())
+                    };
+                    registry.push(launcher::path_entry(
+                        entry.name.clone(),
+                        subtitle,
+                        "SECTORS",
+                        entry.path.clone(),
+                    ));
+                    match_count += 1;
+                    if match_count >= 10 {
+                        break;
+                    }
+                }
+            }
+        }
+
+        results.extend(launcher::filter_entries(&registry, &self.command_bar_text, 12));
+        self.launcher_results = results;
+        if self.launcher_selected >= self.launcher_results.len() {
+            self.launcher_selected = 0;
+        }
+    }
+
+    fn current_view_mode_id(&self) -> &'static str {
+        match self.view_mode {
+            ViewMode::List => "list",
+            ViewMode::Grid => "grid",
+            ViewMode::HexGrid => "hex_grid",
+            ViewMode::Hex => "hex",
+        }
+    }
+
+    fn view_mode_from_id(id: &str) -> ViewMode {
+        match id {
+            "grid" => ViewMode::Grid,
+            "hex_grid" => ViewMode::HexGrid,
+            "hex" => ViewMode::Hex,
+            _ => ViewMode::List,
+        }
+    }
+
+    fn resolve_scene_path(candidate: &str, fallback: &PathBuf) -> PathBuf {
+        let path = PathBuf::from(candidate);
+        if path.is_dir() {
+            path
+        } else {
+            fallback.clone()
+        }
+    }
+
+    fn capture_current_scene(&self, name: String) -> MissionScene {
+        let scene_name = name.trim().to_string();
+        let scene_id = format!(
+            "{}-{}",
+            slugify_scene_name(&scene_name),
+            chrono::Local::now().format("%Y%m%d%H%M%S")
+        );
+        let remote = self.capture_remote_scene_state();
+        self.build_scene_snapshot(
+            scene_id,
+            scene_name,
+            self.infer_scene_summary(&remote),
+            String::new(),
+            false,
+            Vec::new(),
+        )
+    }
+
+    pub(crate) fn save_current_scene(&mut self, explicit_name: Option<String>) {
+        let default_name = format!("MISSION {:02}", self.scene_store.saved_scenes.len() + 1);
+        let scene_name = explicit_name
+            .map(|name| name.trim().to_string())
+            .filter(|name| !name.is_empty())
+            .unwrap_or(default_name);
+
+        let scene = self.capture_current_scene(scene_name);
+        self.scene_store.saved_scenes.insert(0, scene.clone());
+        if self.scene_store.saved_scenes.len() > 16 {
+            self.scene_store.saved_scenes.truncate(16);
+        }
+        self.record_recent_scene_use(&scene);
+        self.scene_manager_selected_id = Some(scene.id.clone());
+        self.save_scene_store();
+        self.status_message = format!("Mission scene captured: {}", scene.display_label());
+        self.refresh_launcher_results();
+        self.trigger_glitch();
+    }
+
+    fn restore_scene_snapshot(&mut self, scene: MissionScene, record_recent: bool, is_session: bool) {
+        let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+        let mut restored_tabs: Vec<Tab> = scene
+            .tabs
+            .iter()
+            .map(|tab| Tab {
+                path: Self::resolve_scene_path(&tab.path, &home),
+                selected: tab.selected,
+            })
+            .collect();
+        if restored_tabs.is_empty() {
+            restored_tabs.push(Tab {
+                path: Self::resolve_scene_path(&scene.current_path, &home),
+                selected: None,
+            });
+        }
+
+        self.tabs = restored_tabs;
+        self.active_tab = scene.active_tab.min(self.tabs.len().saturating_sub(1));
+        self.current_path = Self::resolve_scene_path(&scene.current_path, &self.tabs[self.active_tab].path);
+        self.selected = self.tabs[self.active_tab].selected;
+        self.split_pane_active = scene.split.active;
+        self.split_pane_path = Self::resolve_scene_path(&scene.split.path, &self.current_path);
+        self.split_pane_selected = scene.split.selected;
+        self.sidebar_visible = scene.overlays.sidebar_visible;
+        self.preview_visible = scene.overlays.preview_visible;
+        self.resource_monitor_visible = scene.overlays.resource_monitor_visible;
+        self.terminal_panel_visible = scene.overlays.terminal_panel_visible;
+        self.settings_panel_open = scene.overlays.settings_panel_open;
+        self.process_matrix_open = scene.overlays.process_matrix_visible;
+        self.service_deck_open = scene.overlays.service_deck_visible;
+        self.log_viewer_open = scene.overlays.log_viewer_visible;
+        self.signal_deck_open = scene.overlays.signal_deck_visible;
+        self.data_rain_enabled = scene.overlays.data_rain_enabled;
+        self.terminal_input = scene.terminal.input.clone();
+        self.terminal_history = scene.terminal.history.clone();
+        self.terminal_output = scene.terminal.output_tail.clone();
+        self.terminal_running_command = scene.terminal.running_command.clone();
+        self.terminal_task_running = false;
+        self.terminal_started_at = None;
+        self.sftp_host = scene.remote.host.clone();
+        self.sftp_port = scene.remote.port.clone();
+        self.sftp_user = scene.remote.user.clone();
+        self.sftp_display_name = scene.remote.display_name.clone();
+        self.sftp_remote_path = scene.remote.remote_path.clone();
+        self.sftp_connection = None;
+        self.sftp_dialog = scene.remote.connected;
+        self.sftp_error = None;
+        self.filter_text = scene.filter_text.clone();
+        self.current_theme = CyberTheme::from_id(&scene.theme_id);
+        self.settings.theme = scene.theme_id.clone();
+        self.theme_applied = false;
+        self.view_mode = Self::view_mode_from_id(&scene.view_mode);
+        self.load_current_directory();
+        self.refresh_local_protocol_manifest();
+        self.filter_text = scene.filter_text.clone();
+
+        match scene.command_mode.as_str() {
+            "protocol" => {
+                self.command_surface_mode = CommandSurfaceMode::Protocol;
+                self.command_bar_text = scene.command_text.clone();
+                self.refresh_launcher_results();
+            }
+            _ => {
+                self.command_surface_mode = CommandSurfaceMode::Path;
+                self.sync_command_bar_with_current_path();
+            }
+        }
+
+        self.status_message = if scene.remote.connected {
+            format!(
+                "{}: {} // uplink requires re-auth",
+                if is_session {
+                    "Session deck restored"
+                } else {
+                    "Mission scene restored"
+                },
+                scene.name
+            )
+        } else {
+            format!(
+                "{}: {}",
+                if is_session {
+                    "Session deck restored"
+                } else {
+                    "Mission scene restored"
+                },
+                scene.name
+            )
+        };
+        if record_recent {
+            self.record_recent_scene_use(&scene);
+            self.save_scene_store();
+        }
+        self.scene_manager_selected_id = Some(scene.id.clone());
+        self.trigger_glitch();
+    }
+
+    pub(crate) fn restore_scene(&mut self, scene_id: &str) {
+        let Some(scene) = self
+            .scene_store
+            .saved_scenes
+            .iter()
+            .find(|scene| scene.id == scene_id)
+            .cloned()
+        else {
+            self.set_error(format!("Mission scene not found: {}", scene_id));
+            return;
+        };
+
+        self.restore_scene_snapshot(scene, true, false);
+    }
+
+    pub(crate) fn execute_launcher_action(&mut self, action: LauncherAction) {
+        match action {
+            LauncherAction::OpenTerminalHere => self.open_terminal_here(),
+            LauncherAction::ToggleSidebar => self.sidebar_visible = !self.sidebar_visible,
+            LauncherAction::TogglePreview => self.preview_visible = !self.preview_visible,
+            LauncherAction::ToggleHidden => {
+                self.show_hidden = !self.show_hidden;
+                self.load_current_directory();
+            }
+            LauncherAction::ToggleResourceMonitor => {
+                self.resource_monitor_visible = !self.resource_monitor_visible;
+            }
+            LauncherAction::ToggleEmbeddedTerminal => {
+                self.terminal_panel_visible = !self.terminal_panel_visible;
+            }
+            LauncherAction::OpenSettings => {
+                self.settings_panel_open = true;
+                self.ui_scale_preview = self.settings.font_size;
+            }
+            LauncherAction::OpenSceneManager => self.open_scene_manager(),
+            LauncherAction::SaveMissionScene => self.save_current_scene(None),
+            LauncherAction::RestoreMissionScene(scene_id) => self.restore_scene(&scene_id),
+            LauncherAction::StartDeepScan(query) => {
+                self.content_search_dialog = true;
+                self.content_search_query = query;
+                self.content_search_results.clear();
+                self.start_content_search();
+            }
+            LauncherAction::TriggerFzf => self.fzf_interactive(),
+            LauncherAction::OpenSftpDialog => {
+                self.sftp_dialog = true;
+            }
+            LauncherAction::RefreshRemoteNode => {
+                let path = self.sftp_remote_path.clone();
+                self.start_sftp_list_directory(path);
+                self.sftp_dialog = true;
+            }
+            LauncherAction::DisconnectRemoteNode => self.disconnect_sftp(),
+            LauncherAction::UploadSelectedToRemote => self.start_sftp_upload_selected(),
+            LauncherAction::TailPath(path) => {
+                let command = format!("tail -n 80 -- {}", shell_quote(&path.to_string_lossy()));
+                self.run_embedded_shell_command(
+                    command,
+                    Some(format!("tail {}", path.file_name().unwrap_or_default().to_string_lossy())),
+                );
+            }
+            LauncherAction::LaunchExternalProgram {
+                label,
+                program,
+                args,
+                cwd,
+            } => {
+                let mut command = std::process::Command::new(&program);
+                command.args(&args);
+                if let Some(cwd) = cwd {
+                    command.current_dir(cwd);
+                }
+                match command.spawn() {
+                    Ok(_) => {
+                        self.status_message = format!("Application launched: {}", label);
+                    }
+                    Err(error) => {
+                        self.set_error(format!("Application launch failed [{}]: {}", label, error));
+                    }
+                }
+            }
+            LauncherAction::RunProtocolCommand {
+                label,
+                command,
+                run_in_terminal,
+            } => {
+                if run_in_terminal {
+                    self.run_embedded_shell_command(command, Some(label));
+                } else {
+                    match std::process::Command::new("sh")
+                        .arg("-c")
+                        .arg(&command)
+                        .current_dir(&self.current_path)
+                        .spawn()
+                    {
+                        Ok(_) => {
+                            self.status_message = format!("Protocol engaged: {}", label);
+                        }
+                        Err(error) => {
+                            self.set_error(format!("Protocol launch failed [{}]: {}", label, error));
+                        }
+                    }
+                }
+            }
+            LauncherAction::OpenPath(path) => {
+                if path.is_dir() {
+                    self.navigate_to(path);
+                } else if path.is_file() {
+                    self.open_file(&path);
+                }
+            }
+        }
+    }
+
+    fn execute_protocol_launcher(&mut self) {
+        self.refresh_launcher_results();
+        if let Some(entry) = self.launcher_results.get(self.launcher_selected).cloned() {
+            self.execute_launcher_action(entry.action);
+        } else {
+            self.status_message = "No protocol matched the current query".into();
+        }
+    }
+
     fn poll_background_tasks(&mut self) {
         while let Ok(result) = self.background_rx.try_recv() {
             match result {
-                BackgroundTaskResult::TerminalFinished { lines, duration } => {
+                BackgroundTaskResult::TerminalFinished {
+                    job_id,
+                    lines,
+                    duration,
+                    success,
+                } => {
                     self.terminal_task_running = false;
                     self.terminal_started_at = None;
                     let command = self
@@ -504,14 +1665,30 @@ impl CyberFile {
                         command,
                         duration.as_millis()
                     ));
+                    self.finish_operator_job(
+                        job_id,
+                        if success {
+                            OperatorJobState::Completed
+                        } else {
+                            OperatorJobState::Failed
+                        },
+                        self.terminal_output.clone(),
+                        Some(duration),
+                    );
                     self.trim_terminal_output();
                     self.load_current_directory();
                 }
-                BackgroundTaskResult::TerminalSpawnFailed { message } => {
+                BackgroundTaskResult::TerminalSpawnFailed { job_id, message } => {
                     self.terminal_task_running = false;
                     self.terminal_started_at = None;
                     self.terminal_running_command = None;
                     self.terminal_output.push(format!("[ERR] {}", message));
+                    self.finish_operator_job(
+                        job_id,
+                        OperatorJobState::Failed,
+                        self.terminal_output.clone(),
+                        None,
+                    );
                     self.trim_terminal_output();
                 }
                 BackgroundTaskResult::ContentSearchFinished {
@@ -577,6 +1754,21 @@ impl CyberFile {
                     self.sftp_busy = false;
                     self.sftp_error = None;
                     self.status_message = format!("Downloaded: {}", file_name);
+                    self.sftp_operation_label.clear();
+                }
+                BackgroundTaskResult::SftpUploaded {
+                    request_id,
+                    file_names,
+                } => {
+                    if request_id != self.sftp_request_id {
+                        continue;
+                    }
+                    self.sftp_busy = false;
+                    self.sftp_error = None;
+                    self.status_message = format!(
+                        "Transferred {} construct(s) to uplink",
+                        file_names.len()
+                    );
                     self.sftp_operation_label.clear();
                 }
                 BackgroundTaskResult::SftpFailed { request_id, message } => {
@@ -763,6 +1955,89 @@ impl CyberFile {
         });
     }
 
+    fn start_sftp_upload_selected(&mut self) {
+        if self.sftp_busy {
+            return;
+        }
+        let Some(conn) = self.sftp_connection.as_ref().map(Arc::clone) else {
+            self.set_error("No active uplink available for transfer".into());
+            return;
+        };
+
+        let local_paths: Vec<PathBuf> = self
+            .get_selected_paths()
+            .into_iter()
+            .filter(|path| path.is_file())
+            .collect();
+        if local_paths.is_empty() {
+            self.set_error("Select one or more local files before starting transfer".into());
+            return;
+        }
+
+        let remote_dir = self.sftp_remote_path.clone();
+        let tx = self.background_tx.clone();
+        let request_id = self.next_sftp_request_id();
+        self.sftp_busy = true;
+        self.sftp_error = None;
+        self.sftp_operation_label = format!("Uploading {} construct(s)", local_paths.len());
+        self.status_message = format!("Transferring {} construct(s)...", local_paths.len());
+
+        std::thread::spawn(move || {
+            let result = match conn.lock() {
+                Ok(conn) => {
+                    let mut uploaded = Vec::new();
+                    let mut failure = None;
+                    for local_path in &local_paths {
+                        let file_name = local_path
+                            .file_name()
+                            .map(|name| name.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "construct".to_string());
+                        let remote_path = join_remote_path(&remote_dir, &file_name);
+                        if let Err(message) = conn.upload_file(local_path, &remote_path) {
+                            failure = Some(message);
+                            break;
+                        }
+                        uploaded.push(file_name);
+                    }
+                    if let Some(message) = failure {
+                        Err(message)
+                    } else {
+                        Ok(uploaded)
+                    }
+                }
+                Err(_) => Err("SFTP connection lock failed".to_string()),
+            };
+
+            match result {
+                Ok(file_names) => {
+                    let _ = tx.send(BackgroundTaskResult::SftpUploaded {
+                        request_id,
+                        file_names,
+                    });
+                }
+                Err(message) => {
+                    let _ = tx.send(BackgroundTaskResult::SftpFailed {
+                        request_id,
+                        message,
+                    });
+                }
+            }
+        });
+    }
+
+    pub(crate) fn disconnect_sftp(&mut self) {
+        self.sftp_connection = None;
+        self.sftp_display_name.clear();
+        self.sftp_remote_entries.clear();
+        self.sftp_remote_path = "/".to_string();
+        self.sftp_error = None;
+        self.sftp_busy = false;
+        self.sftp_operation_label.clear();
+        self.sftp_request_id += 1;
+        self.status_message = "Uplink severed".to_string();
+        self.refresh_launcher_results();
+    }
+
     // ── Navigation ────────────────────────────────────────────
 
     pub(crate) fn navigate_to(&mut self, path: PathBuf) {
@@ -783,7 +2058,7 @@ impl CyberFile {
         self.history_pos = self.history.len() - 1;
 
         self.load_current_directory();
-        self.command_bar_text = self.current_path.to_string_lossy().to_string();
+        self.sync_command_bar_with_current_path();
         self.trigger_glitch();
 
         // Update active tab
@@ -823,6 +2098,7 @@ impl CyberFile {
     }
 
     pub(crate) fn load_current_directory(&mut self) {
+        self.refresh_local_protocol_manifest();
         match filesystem::read_directory(&self.current_path, self.show_hidden) {
             Ok(mut entries) => {
                 filesystem::sort_entries(&mut entries, self.sort_column, self.sort_ascending);
@@ -840,6 +2116,7 @@ impl CyberFile {
         self.filter_text.clear();
         self.thumbnail_cache.clear();
         self.thumbnail_failed.clear();
+        self.refresh_launcher_results();
     }
 
     pub(crate) fn sort_entries(&mut self) {
@@ -1023,6 +2300,11 @@ impl CyberFile {
     }
 
     pub(crate) fn execute_command(&mut self) {
+        if self.command_surface_mode == CommandSurfaceMode::Protocol {
+            self.execute_protocol_launcher();
+            return;
+        }
+
         let text = self.command_bar_text.trim().to_string();
         if text.is_empty() {
             return;
@@ -1263,7 +2545,7 @@ impl CyberFile {
         self.selected = tab.selected;
         self.current_path = path;
         self.load_current_directory();
-        self.command_bar_text = self.current_path.to_string_lossy().to_string();
+        self.sync_command_bar_with_current_path();
     }
 
     // ── fzf Integration ───────────────────────────────────────
@@ -1324,6 +2606,22 @@ impl CyberFile {
             }
 
             self.sys_last_refresh = Instant::now();
+        }
+
+        if self.process_matrix_open {
+            self.refresh_process_matrix(false);
+        }
+        if self.service_deck_open {
+            self.refresh_service_deck(false);
+        }
+        if self.log_viewer_open {
+            self.refresh_log_viewer(false);
+        }
+        if self.signal_deck_open {
+            self.refresh_audio_snapshot(false);
+            self.refresh_power_info(false);
+            self.refresh_clipboard(false);
+            self.refresh_notifications(false);
         }
     }
 
@@ -1535,25 +2833,33 @@ impl CyberFile {
 
     // ── Terminal Panel ────────────────────────────────────────
 
-    pub(crate) fn run_terminal_command(&mut self) {
-        let cmd = self.terminal_input.trim().to_string();
+    fn run_embedded_shell_command_at(&mut self, cmd: String, label: Option<String>, cwd: PathBuf) {
+        let cmd = cmd.trim().to_string();
         if cmd.is_empty() || self.terminal_task_running {
             return;
         }
+
+        let label = label.unwrap_or_else(|| cmd.clone());
+        let job_id = self.start_operator_job(&cmd, &label, &cwd);
+        self.terminal_panel_visible = true;
         self.terminal_output.push(format!("$ {}", cmd));
+        self.terminal_history.push(cmd.clone());
+        if self.terminal_history.len() > 50 {
+            let drain = self.terminal_history.len() - 50;
+            self.terminal_history.drain(..drain);
+        }
         self.terminal_task_running = true;
-        self.terminal_running_command = Some(cmd.clone());
+        self.terminal_running_command = Some(label);
         self.terminal_started_at = Some(Instant::now());
         self.trim_terminal_output();
 
         let tx = self.background_tx.clone();
-        let current_dir = self.current_path.clone();
         std::thread::spawn(move || {
             let started = Instant::now();
             let result = std::process::Command::new("sh")
                 .arg("-c")
                 .arg(&cmd)
-                .current_dir(current_dir)
+                .current_dir(cwd)
                 .output();
 
             match result {
@@ -1571,18 +2877,29 @@ impl CyberFile {
                         lines.push(format!("[ERR] command exited with status {}", out.status));
                     }
                     let _ = tx.send(BackgroundTaskResult::TerminalFinished {
+                        job_id,
                         lines,
                         duration: started.elapsed(),
+                        success: out.status.success(),
                     });
                 }
                 Err(e) => {
                     let _ = tx.send(BackgroundTaskResult::TerminalSpawnFailed {
+                        job_id,
                         message: e.to_string(),
                     });
                 }
             }
         });
+    }
 
+    fn run_embedded_shell_command(&mut self, cmd: String, label: Option<String>) {
+        self.run_embedded_shell_command_at(cmd, label, self.current_path.clone());
+    }
+
+    pub(crate) fn run_terminal_command(&mut self) {
+        let cmd = self.terminal_input.trim().to_string();
+        self.run_embedded_shell_command(cmd, None);
         self.terminal_input.clear();
     }
 
@@ -1597,12 +2914,51 @@ impl CyberFile {
     // ── Keyboard Shortcuts ────────────────────────────────────
 
     fn handle_keyboard(&mut self, ctx: &egui::Context) {
+        let open_protocol_launcher = ctx.input(|input| {
+            (input.modifiers.ctrl && input.key_pressed(egui::Key::K))
+                || (!input.modifiers.ctrl
+                    && !input.modifiers.alt
+                    && !input.modifiers.shift
+                    && input.key_pressed(egui::Key::Slash))
+        });
+        if open_protocol_launcher {
+            self.set_command_surface_mode(CommandSurfaceMode::Protocol);
+        }
+
+        let focus_path_surface = ctx
+            .input(|input| input.modifiers.ctrl && input.key_pressed(egui::Key::L));
+        if focus_path_surface {
+            self.set_command_surface_mode(CommandSurfaceMode::Path);
+        }
+
+        let restore_quick_scene = ctx.input(|input| {
+            if !(input.modifiers.alt && !input.modifiers.ctrl && !input.modifiers.shift) {
+                return None;
+            }
+
+            if input.key_pressed(egui::Key::Num1) {
+                Some(0)
+            } else if input.key_pressed(egui::Key::Num2) {
+                Some(1)
+            } else if input.key_pressed(egui::Key::Num3) {
+                Some(2)
+            } else if input.key_pressed(egui::Key::Num4) {
+                Some(3)
+            } else {
+                None
+            }
+        });
+        if let Some(slot_index) = restore_quick_scene {
+            self.restore_quick_scene_slot(slot_index);
+        }
+
         if self.command_bar_active {
             return;
         }
 
         ctx.input(|input| {
             let ctrl = input.modifiers.ctrl;
+            let shift = input.modifiers.shift;
 
             if ctrl && input.key_pressed(egui::Key::H) {
                 self.show_hidden = !self.show_hidden;
@@ -1758,6 +3114,12 @@ impl CyberFile {
             if ctrl && input.key_pressed(egui::Key::F) {
                 self.fzf_interactive();
             }
+            if ctrl && input.modifiers.shift && input.key_pressed(egui::Key::S) {
+                self.save_current_scene(None);
+            }
+            if ctrl && input.modifiers.alt && input.key_pressed(egui::Key::S) {
+                self.open_scene_manager();
+            }
             // Content search (grep/rg)
             if ctrl && input.key_pressed(egui::Key::G) {
                 self.content_search_dialog = true;
@@ -1785,6 +3147,38 @@ impl CyberFile {
             if input.key_pressed(egui::Key::F9) {
                 self.sftp_dialog = !self.sftp_dialog;
             }
+            // Process matrix (Ctrl+Shift+P)
+            if ctrl && shift && input.key_pressed(egui::Key::P) {
+                if self.process_matrix_open {
+                    self.process_matrix_open = false;
+                } else {
+                    self.open_process_matrix();
+                }
+            }
+            // Service deck (Ctrl+D)
+            if ctrl && !shift && input.key_pressed(egui::Key::D) {
+                if self.service_deck_open {
+                    self.service_deck_open = false;
+                } else {
+                    self.open_service_deck();
+                }
+            }
+            // Signal deck (Ctrl+Shift+D)
+            if ctrl && shift && input.key_pressed(egui::Key::D) {
+                if self.signal_deck_open {
+                    self.signal_deck_open = false;
+                } else {
+                    self.open_signal_deck();
+                }
+            }
+            // Log viewer (Ctrl+J)
+            if ctrl && input.key_pressed(egui::Key::J) {
+                if self.log_viewer_open {
+                    self.log_viewer_open = false;
+                } else {
+                    self.open_log_viewer();
+                }
+            }
             if input.key_pressed(egui::Key::Escape) {
                 self.context_menu_open = false;
                 self.settings_panel_open = false;
@@ -1800,9 +3194,26 @@ impl CyberFile {
                 self.batch_rename_dialog = false;
                 self.terminal_panel_visible = false;
                 self.sftp_dialog = false;
+                self.scene_manager_open = false;
+                self.process_matrix_open = false;
+                self.service_deck_open = false;
+                self.log_viewer_open = false;
+                self.signal_deck_open = false;
             }
         });
     }
+}
+
+fn join_remote_path(base: &str, file_name: &str) -> String {
+    if base == "/" {
+        format!("/{}", file_name)
+    } else {
+        format!("{}/{}", base.trim_end_matches('/'), file_name)
+    }
+}
+
+fn shell_quote(input: &str) -> String {
+    format!("'{}'", input.replace('\'', "'\\''"))
 }
 
 // ── eframe::App Implementation ────────────────────────────────────
@@ -1829,6 +3240,8 @@ impl eframe::App for CyberFile {
             self.render_boot_screen(ctx);
             return;
         }
+
+        self.process_startup_scene_request();
 
         // Refresh system info
         self.refresh_system_info();
@@ -1939,9 +3352,29 @@ impl eframe::App for CyberFile {
             self.render_settings_panel(ctx);
         }
 
+        if self.scene_manager_open {
+            self.render_scene_manager(ctx);
+        }
+
         // SFTP connection dialog
         if self.sftp_dialog {
             self.render_sftp_dialog(ctx);
+        }
+
+        // Stage 3 panels
+        if self.process_matrix_open {
+            self.render_process_matrix(ctx);
+        }
+        if self.service_deck_open {
+            self.render_service_deck(ctx);
+        }
+        if self.log_viewer_open {
+            self.render_log_viewer(ctx);
+        }
+
+        // Stage 4 panel
+        if self.signal_deck_open {
+            self.render_signal_deck(ctx);
         }
 
         // HUD overlay elements (NERV-style indicators)
@@ -2008,6 +3441,10 @@ impl eframe::App for CyberFile {
             if needs_save {
                 self.settings.save();
             }
+        }
+
+        if self.frame_count % 180 == 0 {
+            self.sync_session_scene();
         }
     }
 }
@@ -3824,15 +5261,7 @@ impl CyberFile {
                     )
                     .clicked()
                 {
-                    self.sftp_connection = None;
-                    self.sftp_display_name.clear();
-                    self.sftp_remote_entries.clear();
-                    self.sftp_remote_path = "/".to_string();
-                    self.sftp_error = None;
-                    self.sftp_busy = false;
-                    self.sftp_operation_label.clear();
-                    self.sftp_request_id += 1;
-                    self.status_message = "Uplink severed".to_string();
+                    self.disconnect_sftp();
                 }
             }
 

@@ -122,6 +122,73 @@ impl CyberFile {
                 cyber_separator_themed(ui, t.border_dim());
                 ui.add_space(4.0);
 
+                // ── Mission Scenes ───────────────────────────
+                section_header(ui, "MISSION SCENES", t.primary());
+                ui.add_space(4.0);
+
+                let scene_rows: Vec<(String, String, bool)> = self
+                    .ordered_scene_indices()
+                    .into_iter()
+                    .take(4)
+                    .filter_map(|index| {
+                        self.scene_store.saved_scenes.get(index).map(|scene| {
+                            (scene.id.clone(), scene.name.clone(), scene.pinned)
+                        })
+                    })
+                    .collect();
+
+                if scene_rows.is_empty() {
+                    ui.label(
+                        RichText::new("  No mission scenes captured")
+                            .color(t.text_dim())
+                            .monospace()
+                            .size(11.0),
+                    );
+                } else {
+                    for (index, (scene_id, name, pinned)) in scene_rows.into_iter().enumerate() {
+                        let label = if pinned {
+                            format!("{} ★ {}", index + 1, name)
+                        } else {
+                            format!("{} ▪ {}", index + 1, name)
+                        };
+                        if ui
+                            .button(
+                                RichText::new(label)
+                                    .color(if pinned { t.warning() } else { t.text_primary() })
+                                    .monospace()
+                                    .size(11.0),
+                            )
+                            .clicked()
+                        {
+                            self.restore_scene(&scene_id);
+                        }
+                    }
+                }
+
+                ui.add_space(4.0);
+                ui.label(
+                    RichText::new("  Alt+1..4 restore quick scene slots")
+                        .color(t.text_dim())
+                        .monospace()
+                        .size(9.0),
+                );
+                ui.add_space(2.0);
+                if ui
+                    .button(
+                        RichText::new("⟐ OPEN SCENE MANAGER")
+                            .color(t.primary_dim())
+                            .monospace()
+                            .size(11.0),
+                    )
+                    .clicked()
+                {
+                    self.open_scene_manager();
+                }
+
+                ui.add_space(8.0);
+                cyber_separator_themed(ui, t.border_dim());
+                ui.add_space(4.0);
+
                 // ── Disk Info ──────────────────────────────────
                 section_header(ui, "SYSTEM STATUS", t.primary());
                 ui.add_space(4.0);
@@ -270,6 +337,78 @@ impl CyberFile {
                     .clicked()
                 {
                     self.sftp_dialog = true;
+                }
+
+                ui.add_space(8.0);
+                cyber_separator_themed(ui, t.border_dim());
+                ui.add_space(4.0);
+
+                // ── Operator Deck ──────────────────────────────
+                section_header(ui, "OPERATOR DECK", t.primary());
+                ui.add_space(4.0);
+
+                if ui
+                    .button(
+                        RichText::new("⟐ PROCESS MATRIX [Ctrl+Shift+P]")
+                            .color(if self.process_matrix_open { t.accent() } else { t.primary_dim() })
+                            .monospace()
+                            .size(11.0),
+                    )
+                    .clicked()
+                {
+                    if self.process_matrix_open {
+                        self.process_matrix_open = false;
+                    } else {
+                        self.open_process_matrix();
+                    }
+                }
+
+                if ui
+                    .button(
+                        RichText::new("⟐ SERVICE DECK [Ctrl+D]")
+                            .color(if self.service_deck_open { t.accent() } else { t.primary_dim() })
+                            .monospace()
+                            .size(11.0),
+                    )
+                    .clicked()
+                {
+                    if self.service_deck_open {
+                        self.service_deck_open = false;
+                    } else {
+                        self.open_service_deck();
+                    }
+                }
+
+                if ui
+                    .button(
+                        RichText::new("⟐ LOG VIEWER [Ctrl+J]")
+                            .color(if self.log_viewer_open { t.accent() } else { t.primary_dim() })
+                            .monospace()
+                            .size(11.0),
+                    )
+                    .clicked()
+                {
+                    if self.log_viewer_open {
+                        self.log_viewer_open = false;
+                    } else {
+                        self.open_log_viewer();
+                    }
+                }
+
+                if ui
+                    .button(
+                        RichText::new("⟐ SIGNAL DECK [Ctrl+Shift+D]")
+                            .color(if self.signal_deck_open { t.accent() } else { t.primary_dim() })
+                            .monospace()
+                            .size(11.0),
+                    )
+                    .clicked()
+                {
+                    if self.signal_deck_open {
+                        self.signal_deck_open = false;
+                    } else {
+                        self.open_signal_deck();
+                    }
                 }
 
                 ui.add_space(8.0);

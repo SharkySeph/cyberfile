@@ -19,7 +19,7 @@ fn boot_color(kind: char, theme: CyberTheme) -> Color32 {
 }
 
 const BOOT_LINES: &[BootLine] = &[
-    BootLine { time_ms: 0,    text: "[SYSTEM] CYBERFILE v0.1.0",                    kind: 'd' },
+    BootLine { time_ms: 0,    text: "[SYSTEM] CYBERFILE v1.1.2",                    kind: 'd' },
     BootLine { time_ms: 150,  text: "[SYSTEM] Initializing kernel interface... OK",  kind: 'd' },
     BootLine { time_ms: 350,  text: "[SYSTEM] Mounting filesystem nodes...",         kind: 'd' },
     BootLine { time_ms: 550,  text: "[  OK  ] /home — USER DATA SECTOR",             kind: 's' },
@@ -38,6 +38,11 @@ impl CyberFile {
     pub(crate) fn render_boot_screen(&mut self, ctx: &egui::Context) {
         let elapsed_ms = self.boot_start.elapsed().as_millis() as u64;
         let t = self.current_theme;
+        let quick_slots = self.boot_scene_slots();
+        let has_session_resume = self.has_session_resume();
+        let mut restore_scene_id: Option<String> = None;
+        let mut resume_session = false;
+        let mut fresh_start = false;
 
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(t.bg_dark()).inner_margin(40.0))
@@ -77,33 +82,146 @@ impl CyberFile {
 
                 ui.add_space(24.0);
 
-                if elapsed_ms > 800 {
+                if elapsed_ms > 900 {
                     ui.label(
-                        RichText::new("Press any key or click to skip...")
+                        RichText::new(if has_session_resume {
+                            "[ENTER] Resume last session deck   [0] Fresh start   [1-4] Restore quick scene"
+                        } else {
+                            "[ENTER] Continue   [1-4] Restore quick scene"
+                        })
+                        .color(t.text_dim())
+                        .monospace()
+                        .size(11.0),
+                    );
+
+                    ui.add_space(10.0);
+                    egui::Frame::new()
+                        .fill(t.surface())
+                        .stroke(egui::Stroke::new(1.0, t.border_dim()))
+                        .inner_margin(egui::Margin::symmetric(10, 8))
+                        .show(ui, |ui| {
+                            ui.label(
+                                RichText::new("BOOT DECK")
+                                    .color(t.primary())
+                                    .monospace()
+                                    .size(10.5),
+                            );
+                            ui.add_space(4.0);
+
+                            if has_session_resume {
+                                if ui
+                                    .button(
+                                        RichText::new("[ENTER] RESUME LAST SESSION")
+                                            .color(t.success())
+                                            .monospace()
+                                            .size(11.0),
+                                    )
+                                    .clicked()
+                                {
+                                    resume_session = true;
+                                }
+                            }
+
+                            for (index, scene) in quick_slots.iter().enumerate() {
+                                let label = if scene.pinned {
+                                    format!("[{}] ★ {}", index + 1, scene.name)
+                                } else {
+                                    format!("[{}] {}", index + 1, scene.name)
+                                };
+                                if ui
+                                    .button(
+                                        RichText::new(label)
+                                            .color(if scene.pinned { t.warning() } else { t.primary() })
+                                            .monospace()
+                                            .size(11.0),
+                                    )
+                                    .clicked()
+                                {
+                                    restore_scene_id = Some(scene.scene_id.clone());
+                                }
+                                if !scene.summary.trim().is_empty() {
+                                    ui.label(
+                                        RichText::new(&scene.summary)
+                                            .color(t.text_dim())
+                                            .monospace()
+                                            .size(9.5),
+                                    );
+                                }
+                            }
+
+                            if has_session_resume {
+                                ui.add_space(6.0);
+                                if ui
+                                    .button(
+                                        RichText::new("[0] FRESH START")
+                                            .color(t.text_dim())
+                                            .monospace()
+                                            .size(10.5),
+                                    )
+                                    .clicked()
+                                {
+                                    fresh_start = true;
+                                }
+                            }
+                        });
+
+                    ui.add_space(12.0);
+                    ui.label(
+                        RichText::new("Auto-resume engages when boot completes if no manual deck is selected")
                             .color(t.text_dim())
                             .monospace()
                             .size(11.0),
                     );
                 }
 
-                // Check for skip
-                if ui.input(|i| {
-                    i.pointer.any_click()
-                        || i.keys_down.iter().next().is_some()
-                        || i.key_pressed(egui::Key::Escape)
-                        || i.key_pressed(egui::Key::Enter)
-                        || i.key_pressed(egui::Key::Space)
-                }) {
-                    self.boot_complete = true;
-                    self.load_current_directory();
+                if ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space)) {
+                    if has_session_resume {
+                        resume_session = true;
+                    } else {
+                        fresh_start = true;
+                    }
+                }
+
+                if ui.input(|i| i.key_pressed(egui::Key::Num0) || i.key_pressed(egui::Key::Escape)) {
+                    fresh_start = true;
+                }
+
+                for (index, key) in [egui::Key::Num1, egui::Key::Num2, egui::Key::Num3, egui::Key::Num4]
+                    .into_iter()
+                    .enumerate()
+                {
+                    if ui.input(|i| i.key_pressed(key)) {
+                        if let Some(scene) = quick_slots.get(index) {
+                            restore_scene_id = Some(scene.scene_id.clone());
+                        }
+                    }
+                }
+
+                if restore_scene_id.is_none() && !resume_session && !fresh_start && ui.input(|i| i.pointer.any_click()) {
+                    if has_session_resume {
+                        resume_session = true;
+                    } else {
+                        fresh_start = true;
+                    }
                 }
 
                 // Auto-complete boot
                 if elapsed_ms >= BOOT_DURATION_MS {
-                    self.boot_complete = true;
-                    self.load_current_directory();
+                    if has_session_resume {
+                        resume_session = true;
+                    } else {
+                        fresh_start = true;
+                    }
                 }
             });
+
+        if let Some(scene_id) = restore_scene_id {
+            self.queue_boot_scene_restore(scene_id);
+        } else if resume_session {
+            self.queue_boot_resume();
+        } else if fresh_start {
+            self.queue_boot_fresh_start();
+        }
 
         // Keep animating
         ctx.request_repaint();

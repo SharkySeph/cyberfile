@@ -2,6 +2,8 @@ mod app;
 mod config;
 mod filesystem;
 mod integrations;
+mod launcher;
+mod scenes;
 mod theme;
 mod ui;
 

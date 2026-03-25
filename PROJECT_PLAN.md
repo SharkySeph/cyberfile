@@ -70,7 +70,7 @@ A file management system that replaces the conventional desktop metaphor with a 
 
 ### 2.2 Module Architecture
 
-```
+```text
 cyberfile/
 ├── src/
 │   ├── main.rs                  # Entry point, boot sequence
@@ -263,8 +263,8 @@ All effects are independently togglable and have intensity sliders:
 
 On launch, display a 2-3 second boot screen (skippable):
 
-```
-[SYSTEM] CYBERFILE v0.1.0
+```text
+[SYSTEM] CYBERFILE v1.1.2
 [SYSTEM] Initializing kernel interface... OK
 [SYSTEM] Mounting filesystem nodes...
 [  OK  ] /home — USER DATA SECTOR
@@ -302,7 +302,7 @@ On launch, display a 2-3 second boot screen (skippable):
 
 Styled as a translucent dark panel with neon border, items include:
 
-```
+```text
 ┌─[ ACTIONS ]──────────────────┐
 │  ▸ Open                      │
 │  ▸ Open with...              │
@@ -322,7 +322,7 @@ Styled as a translucent dark panel with neon border, items include:
 
 ### 4.4 Status Bar Layout
 
-```
+```text
 [ /home/user/Documents ]  ◈ 47 constructs  |  ◈ 2.3 GB sector  |  ◈ 128 GB free  |  DISK: ████░░ 67%  |  12:47:33
 ```
 
@@ -437,6 +437,10 @@ Styled as a translucent dark panel with neon border, items include:
 | Ctrl+W | Close tab |
 | Ctrl+B | Sidebar toggle |
 | Ctrl+P | Preview panel toggle |
+| Ctrl+Shift+P | Process Matrix |
+| Ctrl+D | Service Deck |
+| Ctrl+J | Log Viewer |
+| Ctrl+Shift+D | Signal Deck |
 | Ctrl+H | Hidden files toggle |
 | Ctrl+F | fzf search |
 | Ctrl+C/X/V | Copy / Cut / Paste |
@@ -456,7 +460,7 @@ Styled as a translucent dark panel with neon border, items include:
 
 ### Architecture (Actual)
 
-```
+```text
 cyberfile/
 ├── Cargo.toml                   # eframe 0.31, sysinfo 0.32, serde, toml, chrono, ssh2, etc.
 ├── README.md                    # Feature docs, install instructions, shortcuts
@@ -685,6 +689,159 @@ cyberfile/
 - [x] README with feature showcase and keyboard shortcuts
 - [ ] Public release
 
+### Parallel Track — Operator Console Expansion — "TACTICAL CONSOLE"
+
+**Goal:** Evolve cyberfile from a themed file manager into a focused in-DE control deck without turning it into a full desktop environment.
+
+#### Product Doctrine
+
+- **Cyberfile remains an operator console, not a shell replacement.** It should orchestrate files, processes, services, devices, and sessions from one surface.
+- **Files stay central.** Every non-file subsystem should attach back to directories, projects, remotes, logs, or launch contexts.
+- **Integrations must degrade gracefully.** WM- and distro-specific bridges stay optional and auto-detected.
+- **Everything should be keyboard-first and stateful.** The command layer, session restore, and saved actions matter more than decorative widgets.
+
+#### Primary Subsystems
+
+| Subsystem | In-universe Name | Purpose | Likely Integration Layer |
+|-----------|------------------|---------|--------------------------|
+| **FILES** | Data Sectors | Existing file manager core | `std::fs`, trash, preview, archive, SFTP |
+| **PROTOCOLS** | Protocol Launcher | Unified command palette for actions, scripts, apps, remotes, and toggles | internal registry + shell commands + D-Bus |
+| **SCENES** | Mission Scenes | Save and restore tabs, paths, terminal commands, remotes, and launch context | config persistence + app state snapshots |
+| **PROC** | Process Matrix | Inspect, filter, kill, and relaunch running processes and project tasks | `/proc`, `sysinfo`, child-process tracking |
+| **SERVICES** | Service Deck | Start/stop/restart user services and inspect logs | `systemd --user`, `journalctl` |
+| **SIGNALS** | Signal Deck | Volume, media, mic, clipboard, notifications, power, brightness | D-Bus, `playerctl`, `wpctl`/`pactl`, `brightnessctl` |
+| **NET** | Network Mesh | Wi-Fi, VPN, SSH bookmarks, remote mounts, transfer state | NetworkManager D-Bus / `nmcli`, SSH/SFTP |
+| **DEVICES** | Device Bay | Mount/eject disks, removable media, phones, cameras | `udisks2`, GVfs, MTP tools |
+| **WINDOWS** | Window Bridge | Optional focus/move/launch control for the surrounding compositor | `hyprctl`, `swaymsg`, `i3-msg`, `wmctrl` fallback |
+
+#### Recommended Implementation Order
+
+#### Stage 1 — Command Surface — "PROTOCOL LAYER"
+
+**Outcome:** Cyberfile becomes the place you go to do things, not just browse files.
+
+- [x] Replace the current command bar with a registry-backed launcher that mixes files, commands, apps, bookmarks, remotes, and system actions in one result list
+- [x] Add named "protocols" backed by shell commands or built-in actions with arguments and icons
+- [x] Add quick actions for common operator tasks: open terminal here, tail log here, start transfer, launch editor, open system apps, and connect remote
+- [x] Add per-directory and per-project action presets so Cyberfile feels context-aware
+
+#### Stage 1 Implementation Work Packages
+
+| Work Package | Scope | Files / Modules |
+|--------------|-------|-----------------|
+| **1A. Surface mode split** | Separate path-navigation mode from protocol-launcher mode, preserving fast path entry | `src/app.rs`, `src/ui/command_bar.rs`, `src/launcher.rs` |
+| **1B. Launcher registry** | Introduce a registry of built-in actions and scene restores, with typed actions instead of raw strings | `src/launcher.rs` |
+| **1C. Result list UI** | Inline launcher panel under the command bar with keyboard selection and click-to-execute behavior | `src/ui/command_bar.rs` |
+| **1D. Action execution bridge** | Map launcher actions to real app state changes: terminal, panels, deep scan, settings, scene capture | `src/app.rs` |
+| **1E. Context presets** | Add directory/project scoped protocol manifests via global config and nearest `.cyberfile.toml` override | `src/launcher.rs`, `src/config.rs`, `config.toml`, `.cyberfile.toml` |
+
+#### Current Scaffold Status
+
+- [x] Two-mode command surface scaffolded: `PATH` and `PROTO`
+- [x] Built-in launcher registry scaffolded with panel toggles, terminal, deep scan, settings, and scene actions
+- [x] Inline protocol results panel scaffolded in the top bar
+- [x] Global protocol manifest support via `config.toml`
+- [x] Nearest local protocol manifest support via `.cyberfile.toml`
+- [x] Scene Manager window scaffolded with capture, restore, pin, rename, and delete flows
+- [x] External app launch catalog
+- [x] Remote/node-specific protocol providers
+
+#### Stage 2 — Stateful Workspace — "MISSION SCENES"
+
+**Outcome:** Cyberfile can restore a working session as a command deck, not just a last-opened folder.
+
+- [x] Save and restore scene snapshots: open tabs, split panes, focused directories, SFTP nodes, terminal history, filter state, theme, overlays
+- [x] Support pinned scenes such as "Code Ops", "Media Intake", "Remote Maintenance", and "Archive Recovery"
+- [x] Add one-key scene switching and scene launch from the boot screen / command layer
+- [x] Persist recent scenes separately from generic app state
+
+#### Mission Scene Data Model
+
+| Field Group | Stored State | Purpose |
+|-------------|--------------|---------|
+| **Identity** | `id`, `name`, `summary`, `updated_at`, `tags`, `pinned` | Stable restore target + user-facing label |
+| **Sector State** | `current_path`, `tabs[]`, `active_tab`, split pane path/selection | Rebuild the file-manager workspace |
+| **Surface State** | `command_text`, `command_mode`, `filter_text`, `view_mode`, `theme_id` | Restore the operator's current control surface |
+| **Overlay State** | sidebar, preview, resource monitor, terminal panel, settings panel, data rain | Recreate the current HUD layout |
+| **Terminal State** | command input, recent command history, running command label, output tail | Preserve recent terminal context without trying to serialize live processes |
+| **Remote State** | SFTP host/user/port/display/path plus connection intent | Restore the remote target and prompt for re-auth when needed |
+| **Scene Store** | `saved_scenes`, `recent_scenes`, `session_scene` | Persist named decks, boot quick slots, and the last-session resume point in `scenes.toml` |
+
+#### Scene Restore Rules
+
+- Live process handles and authenticated SFTP sessions are **not** resumed automatically; scenes restore intent, not privileged live handles.
+- Invalid paths degrade to the current home directory instead of failing the full scene restore.
+- Terminal output is intentionally truncated to a recent tail to keep config persistence small and stable.
+- Scene restore should re-apply theme, layout, and command-surface mode before optional future WM hooks fire.
+- The boot deck exposes the last-session snapshot plus four quick scene slots backed by pinned and recent scenes.
+
+#### Stage 3 — System Control — "PROCESS + SERVICE DECK"
+
+**Outcome:** Cyberfile becomes a practical control panel for active work.
+
+- [x] Add a live process matrix with search, sort, kill, cwd display, and child-process grouping
+- [x] Track commands launched from the embedded terminal as first-class jobs with output history and restart controls
+- [x] Add a Service Deck for `systemd --user` units with start/stop/restart/enable and status inspection
+- [x] Add a log viewer with saved watch channels backed by `journalctl`
+
+#### Stage 4 — Desktop Signals — "SIGNAL DECK"
+
+**Outcome:** The app starts to feel like a mini DE inside the existing DE.
+
+- [ ] Add audio route controls, mic mute, volume mixer, and current sink/source visibility
+- [ ] Expand MPRIS into a generalized media bus: playback, player switch, progress, artwork cache
+- [ ] Add notification history and clipboard history panels
+- [ ] Add laptop-oriented controls where available: battery, brightness, power profile, idle inhibit
+
+#### Stage 5 — Network + Devices — "FIELD OPS"
+
+**Outcome:** Local, remote, and removable resources all feel part of one interface.
+
+- [ ] Add Network Mesh status for interfaces, SSIDs, VPN tunnels, and transfer throughput
+- [ ] Add SSH bookmark vault with connect, reconnect, and scene binding
+- [ ] Add Device Bay for removable disks and media with mount/eject actions and health/status readouts
+- [ ] Expand remote nodes beyond SFTP to SMB/NFS where practical
+
+#### Stage 6 — Optional WM Hooks — "TACTICAL BRIDGE"
+
+**Outcome:** Cyberfile can coordinate the surrounding desktop without owning it.
+
+- [ ] Add optional window-manager bridges for Hyprland, Sway, and i3
+- [ ] Surface launch/focus/move-to-workspace actions from the command layer
+- [ ] Support scene actions that open/focus external apps and arrange them loosely through compositor hooks
+- [ ] Keep all WM-specific features behind capability detection and settings flags
+
+#### Suggested Module Additions
+
+```text
+src/
+    launcher.rs        # protocol registry + action filtering
+    scenes.rs          # mission scene serialization model
+    integrations/
+        audio.rs           # volume, mic, sinks/sources
+        devices.rs         # udisks2 / removable media state
+        journald.rs        # journalctl readers / log filters
+        network.rs         # nmcli / D-Bus network state
+        processes.rs       # process inventory + task control
+        services.rs        # systemd --user integration
+        windows.rs         # optional compositor / WM bridge
+    ui/
+        launcher.rs        # registry-driven command palette
+        scene_manager.rs   # save/restore working scenes
+        process_matrix.rs  # process browser + task controls
+        service_deck.rs    # service list + logs
+        signal_deck.rs     # media/audio/notifications/clipboard
+        network_mesh.rs    # network + remote status
+        device_bay.rs      # mountable devices + removable media
+```
+
+#### Non-Goals
+
+- Replacing the Linux panel, launcher, or compositor
+- Becoming a full terminal emulator or full IDE
+- Re-implementing a distro settings center wholesale
+- Depending on one compositor or desktop environment for core usability
+
 ---
 
 ## 7. Technical Considerations
@@ -766,4 +923,4 @@ cyberfile/
 
 ---
 
-*// END OF LINE*
+// END OF LINE

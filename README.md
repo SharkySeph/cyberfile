@@ -86,9 +86,31 @@ Built with Rust and egui — CyberFile replaces the conventional desktop file ma
 - **D-Bus** — CLI path arguments, `--show-item` support
 - **Sound Effects** — Synthesized UI audio via rodio (togglable)
 
+### Operator Deck
+
+- **Process Matrix** (Ctrl+Shift+P) — Live process browser with filter, sort, TERM/KILL controls
+- **Service Deck** (Ctrl+D) — `systemd --user` service management with start/stop/restart/enable/disable and status inspection
+- **Log Viewer** (Ctrl+J) — Multi-channel `journalctl` log viewer with saved watch channels
+- **Signal Deck** (Ctrl+Shift+D) — Audio controls, mic mute, volume mixer, clipboard history, notification history, battery/brightness/power profile
+
+### Operator Console Direction
+
+CyberFile is moving toward a focused "mini DE inside your DE" model: a control deck for files, commands, scenes, remotes, processes, services, and desktop signals.
+
+- **Protocol Launcher** — one command surface for files, apps, scripts, remotes, and system actions
+- **Mission Scenes** — restore full working states: tabs, splits, remotes, commands, overlays
+- **Process Matrix** — inspect and control running tasks from the HUD
+- **Service Deck** — user-service control and log viewing via `systemd --user`
+- **Signal Deck** — media, audio, mic, notifications, clipboard, power, brightness
+- **Network Mesh / Device Bay** — remote nodes, VPN/Wi-Fi state, removable media, mounts
+
 ### Boot Sequence
 
-POST-style startup animation with progress bar — skippable.
+POST-style startup animation with progress bar plus boot-deck actions.
+
+- `Enter` resumes the last autosaved session deck when available
+- `1-4` restores the top pinned/recent mission scenes from the boot deck
+- `0` starts fresh without restoring the autosaved session
 
 ---
 
@@ -141,11 +163,20 @@ The install script copies the binary, .desktop file, and icon to the appropriate
 | **Ctrl+T** | New tab |
 | **Ctrl+W** | Close tab |
 | **Ctrl+B** | Toggle sidebar |
+| **Ctrl+K** or **/** | Open Protocol Launcher |
+| **Ctrl+L** | Focus path surface |
 | **Ctrl+P** | Toggle preview panel |
+| **Ctrl+Shift+P** | Process Matrix |
+| **Ctrl+D** | Service Deck |
+| **Ctrl+J** | Log Viewer |
+| **Ctrl+Shift+D** | Signal Deck |
 | **Ctrl+H** | Toggle hidden files |
 | **Ctrl+F** | fzf fuzzy search |
 | **Ctrl+G** | Content search (DEEP SCAN) |
 | **Ctrl+R** | Batch rename (multi-select) |
+| **Ctrl+Shift+S** | Capture mission scene |
+| **Ctrl+Alt+S** | Open Scene Manager |
+| **Alt+1/2/3/4** | Restore quick scene slots |
 | **Ctrl+I** | Properties dialog |
 | **Ctrl+C/X/V** | Copy / Cut / Paste |
 | **Ctrl+N** | New file |
@@ -162,6 +193,51 @@ The install script copies the binary, .desktop file, and icon to the appropriate
 ## Configuration
 
 Settings are stored in `~/.config/cyberfile/config.toml` and persisted automatically. The settings panel (F1) provides a themed UI for all options.
+
+### Protocol Manifests
+
+The Protocol Launcher can load actions from two places:
+
+- Global operator config: `~/.config/cyberfile/config.toml`
+- Local project override: nearest `.cyberfile.toml` found by walking up from the current sector
+
+Example global config:
+
+```toml
+[[protocols]]
+id = "user.git.status"
+name = "GIT STATUS"
+subtitle = "Inspect repository state"
+command = "git status --short --branch"
+section = "GLOBAL"
+icon = "⎇"
+tags = ["git", "repo", "status"]
+run_in_terminal = true
+```
+
+Example local `.cyberfile.toml`:
+
+```toml
+[meta]
+name = "cyberfile"
+
+[[protocols]]
+name = "CARGO CHECK"
+subtitle = "Validate the current Rust sector"
+command = "cargo check"
+section = "LOCAL"
+icon = "⚙"
+tags = ["rust", "cargo", "check"]
+run_in_terminal = true
+```
+
+Mission Scenes now persist in `~/.config/cyberfile/scenes.toml`, separate from generic app state in `config.toml`.
+
+The scene store keeps three layers of state:
+
+- Saved mission scenes for named/pinned decks
+- Recent scene references for boot-time and hotkey quick slots
+- A last-session snapshot used by the boot deck to resume the working command surface
 
 ---
 

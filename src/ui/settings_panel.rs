@@ -40,7 +40,7 @@ impl CyberFile {
             // ── Header bar ──
             ui.horizontal(|ui| {
                 ui.label(
-                    RichText::new("OPERATOR ACCESS // v0.1")
+                    RichText::new("OPERATOR ACCESS // v1.1.2")
                         .color(t.text_dim())
                         .monospace()
                         .size(9.0),
@@ -418,6 +418,68 @@ impl CyberFile {
                         self.settings.custom_openers.remove(&key);
                     }
 
+                    ui.add_space(6.0);
+                    ui.label(
+                        RichText::new("PROTOCOL LAYER:")
+                            .color(t.text_dim())
+                            .monospace()
+                            .size(10.0),
+                    );
+                    ui.label(
+                        RichText::new(format!(
+                            "  GLOBAL: {} protocol(s)",
+                            self.settings.protocols.len()
+                        ))
+                        .color(t.text_primary())
+                        .monospace()
+                        .size(9.0),
+                    );
+                    if let Some(manifest) = &self.local_protocol_manifest {
+                        ui.label(
+                            RichText::new(format!(
+                                "  LOCAL: {} protocol(s) // {}",
+                                manifest.protocols.len(),
+                                manifest.path.display()
+                            ))
+                            .color(t.success())
+                            .monospace()
+                            .size(9.0),
+                        );
+                    } else {
+                        ui.label(
+                            RichText::new("  LOCAL: no .cyberfile.toml manifest detected")
+                                .color(t.text_dim())
+                                .monospace()
+                                .size(9.0),
+                        );
+                    }
+
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        if ui
+                            .button(
+                                RichText::new("OPEN SCENE MANAGER")
+                                    .color(t.primary())
+                                    .monospace()
+                                    .size(9.0),
+                            )
+                            .clicked()
+                        {
+                            self.open_scene_manager();
+                        }
+                        if ui
+                            .button(
+                                RichText::new("CAPTURE SCENE")
+                                    .color(t.accent())
+                                    .monospace()
+                                    .size(9.0),
+                            )
+                            .clicked()
+                        {
+                            self.save_current_scene(None);
+                        }
+                    });
+
                     ui.add_space(8.0);
                     Self::hex_accent_line(ui, t);
                     ui.add_space(6.0);
@@ -433,6 +495,30 @@ impl CyberFile {
                             crate::config::Settings::config_path().display()
                         ))
                         .color(t.text_dim())
+                        .monospace()
+                        .size(9.0),
+                    );
+                    ui.label(
+                        RichText::new(format!(
+                            "  SCENES: {}",
+                            crate::scenes::SceneStore::path().display()
+                        ))
+                        .color(t.text_dim())
+                        .monospace()
+                        .size(9.0),
+                    );
+                    ui.label(
+                        RichText::new(format!(
+                            "  SNAPSHOTS: {} saved // {} recent // session {}",
+                            self.scene_store.saved_scenes.len(),
+                            self.scene_store.recent_scenes.len(),
+                            if self.scene_store.session_scene.is_some() {
+                                "armed"
+                            } else {
+                                "idle"
+                            }
+                        ))
+                        .color(t.text_primary())
                         .monospace()
                         .size(9.0),
                     );

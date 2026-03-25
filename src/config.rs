@@ -5,6 +5,45 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
+use crate::integrations::journald::LogChannel;
+use crate::scenes::MissionScene;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ProtocolCommand {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub subtitle: String,
+    #[serde(default)]
+    pub command: String,
+    #[serde(default)]
+    pub section: String,
+    #[serde(default)]
+    pub icon: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub run_in_terminal: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct LocalProtocolManifestMeta {
+    #[serde(default)]
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct LocalProtocolManifest {
+    #[serde(default)]
+    pub meta: LocalProtocolManifestMeta,
+    #[serde(default)]
+    pub protocols: Vec<ProtocolCommand>,
+    #[serde(default)]
+    pub log_channels: Vec<LogChannel>,
+}
+
 /// Persisted operator configuration loaded from `config.toml`.
 ///
 /// Field names are intentionally stable because they are used as serialized keys.
@@ -59,6 +98,12 @@ pub struct Settings {
     pub bookmarks: Vec<String>,
     #[serde(default)]
     pub saved_tabs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub saved_scenes: Vec<MissionScene>,
+    #[serde(default)]
+    pub protocols: Vec<ProtocolCommand>,
+    #[serde(default)]
+    pub log_channels: Vec<LogChannel>,
 
     // ── Sound ────────────────────────────────────────────
     /// Enable synthesized UI feedback sounds.
@@ -126,6 +171,9 @@ impl Default for Settings {
             last_directory: String::new(),
             bookmarks: Vec::new(),
             saved_tabs: Vec::new(),
+            saved_scenes: Vec::new(),
+            protocols: Vec::new(),
+            log_channels: Vec::new(),
             sound_enabled: false,
             neon_glow: false,
             chromatic_aberration: false,
@@ -213,9 +261,24 @@ impl Settings {
     pub fn opener_for_ext(&self, ext: &str) -> Option<&String> {
         self.custom_openers.get(&ext.to_lowercase())
     }
+
+    pub fn ensure_default_log_channels(&mut self) {
+        if self.log_channels.is_empty() {
+            self.log_channels = crate::integrations::journald::default_log_channels();
+        }
+    }
 }
 
-fn resolve_executable(command: &str) -> Option<String> {
+pub(crate) fn detect_first_available(commands: &[&str]) -> Option<String> {
+    for command in commands {
+        if let Some(resolved) = resolve_executable(command) {
+            return Some(resolved);
+        }
+    }
+    None
+}
+
+pub(crate) fn resolve_executable(command: &str) -> Option<String> {
     let command = command.trim();
     if command.is_empty() {
         return None;
