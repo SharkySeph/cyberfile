@@ -272,7 +272,9 @@ impl CyberTheme {
 
 // ── Legacy Color Constants (Night City defaults) ───────────────
 pub const CYAN: Color32 = Color32::from_rgb(0x00, 0xF0, 0xFF);
+#[allow(dead_code)]
 pub const CYAN_DIM: Color32 = Color32::from_rgb(0x00, 0x80, 0x99);
+#[allow(dead_code)]
 pub const MAGENTA: Color32 = Color32::from_rgb(0xFF, 0x20, 0x79);
 #[allow(dead_code)]
 pub const YELLOW: Color32 = Color32::from_rgb(0xF7, 0xF3, 0x2A);
@@ -284,6 +286,7 @@ pub const SURFACE_RAISED: Color32 = Color32::from_rgb(0x12, 0x18, 0x22);
 #[allow(dead_code)]
 pub const DANGER: Color32 = Color32::from_rgb(0xFF, 0x33, 0x33);
 pub const SUCCESS: Color32 = Color32::from_rgb(0x39, 0xFF, 0x14);
+#[allow(dead_code)]
 pub const TEXT_PRIMARY: Color32 = Color32::from_rgb(0xE0, 0xE0, 0xE8);
 pub const TEXT_DIM: Color32 = Color32::from_rgb(0x4A, 0x7A, 0x7F);
 #[allow(dead_code)]

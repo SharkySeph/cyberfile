@@ -3,7 +3,6 @@ use std::path::PathBuf;
 
 use crate::app::CyberFile;
 use crate::filesystem::SortColumn;
-use crate::theme::*;
 
 /// Pre-collected display data for a single file entry row.
 /// Avoids borrow conflicts in closures.
@@ -20,6 +19,7 @@ struct DisplayRow {
 
 impl CyberFile {
     pub(crate) fn render_file_view(&mut self, ui: &mut egui::Ui) {
+        let t = self.current_theme;
         // ── Breadcrumb ─────────────────────────────────────────
         let breadcrumb_nav = self.render_breadcrumb(ui);
         if let Some(path) = breadcrumb_nav {
@@ -53,7 +53,7 @@ impl CyberFile {
                         "NAME{}",
                         sort_indicator(SortColumn::Name, sort_col, sort_asc)
                     ))
-                    .color(CYAN)
+                    .color(t.primary())
                     .monospace()
                     .size(11.0)
                     .strong(),
@@ -72,7 +72,7 @@ impl CyberFile {
                         "SIZE{}",
                         sort_indicator(SortColumn::Size, sort_col, sort_asc)
                     ))
-                    .color(CYAN)
+                    .color(t.primary())
                     .monospace()
                     .size(11.0)
                     .strong(),
@@ -91,7 +91,7 @@ impl CyberFile {
                         "EXT{}",
                         sort_indicator(SortColumn::Extension, sort_col, sort_asc)
                     ))
-                    .color(CYAN)
+                    .color(t.primary())
                     .monospace()
                     .size(11.0)
                     .strong(),
@@ -110,7 +110,7 @@ impl CyberFile {
                         "MODIFIED{}",
                         sort_indicator(SortColumn::Modified, sort_col, sort_asc)
                     ))
-                    .color(CYAN)
+                    .color(t.primary())
                     .monospace()
                     .size(11.0)
                     .strong(),
@@ -124,7 +124,7 @@ impl CyberFile {
 
             ui.label(
                 RichText::new("ACCESS")
-                    .color(CYAN)
+                    .color(t.primary())
                     .monospace()
                     .size(11.0)
                     .strong(),
@@ -149,7 +149,7 @@ impl CyberFile {
                 egui::pos2(sep_rect.left(), sep_rect.top()),
                 egui::pos2(sep_rect.right(), sep_rect.top()),
             ],
-            egui::Stroke::new(0.5, CYAN_DIM),
+            egui::Stroke::new(0.5, t.primary_dim()),
         );
         ui.add_space(3.0);
 
@@ -193,13 +193,13 @@ impl CyberFile {
                     ui.vertical_centered(|ui| {
                         ui.label(
                             RichText::new("[ SECTOR EMPTY ]")
-                                .color(TEXT_DIM)
+                                .color(t.text_dim())
                                 .monospace()
                                 .size(16.0),
                         );
                         ui.label(
                             RichText::new("No data constructs found")
-                                .color(TEXT_DIM)
+                                .color(t.text_dim())
                                 .monospace()
                                 .size(12.0),
                         );
@@ -212,7 +212,7 @@ impl CyberFile {
                         || current_multi.contains(&row.index);
 
                     let frame_fill = if is_sel {
-                        Color32::from_rgba_premultiplied(0xFF, 0x20, 0x79, 0x18)
+                        t.selection_bg()
                     } else {
                         Color32::TRANSPARENT
                     };
@@ -225,11 +225,11 @@ impl CyberFile {
                         ui.horizontal(|ui| {
                             // Icon
                             let (icon, icon_color) = if row.is_dir {
-                                ("◆", CYAN)
+                                ("◆", t.primary())
                             } else if row.is_symlink {
-                                ("◇", MAGENTA)
+                                ("◇", t.accent())
                             } else {
-                                ("◇", TEXT_DIM)
+                                ("◇", t.text_dim())
                             };
                             ui.label(
                                 RichText::new(icon)
@@ -241,13 +241,13 @@ impl CyberFile {
 
                             // Name
                             let name_color = if row.is_dir {
-                                CYAN
+                                t.primary()
                             } else if row.is_symlink {
-                                MAGENTA
+                                t.accent()
                             } else if row.is_hidden {
-                                TEXT_DIM
+                                t.text_dim()
                             } else {
-                                TEXT_PRIMARY
+                                t.text_primary()
                             };
 
                             let name_text = RichText::new(&row.name)
@@ -263,21 +263,21 @@ impl CyberFile {
                                 |ui| {
                                     ui.label(
                                         RichText::new(&row.permissions)
-                                            .color(TEXT_DIM)
+                                            .color(t.text_dim())
                                             .monospace()
                                             .size(11.0),
                                     );
                                     ui.add_space(16.0);
                                     ui.label(
                                         RichText::new(&row.modified)
-                                            .color(TEXT_DIM)
+                                            .color(t.text_dim())
                                             .monospace()
                                             .size(11.0),
                                     );
                                     ui.add_space(16.0);
                                     ui.label(
                                         RichText::new(&row.size)
-                                            .color(TEXT_DIM)
+                                            .color(t.text_dim())
                                             .monospace()
                                             .size(11.0),
                                     );
@@ -364,12 +364,13 @@ impl CyberFile {
 
     /// Render breadcrumb path navigation. Returns Some(path) if user clicked a segment.
     fn render_breadcrumb(&self, ui: &mut egui::Ui) -> Option<PathBuf> {
+        let t = self.current_theme;
         let mut nav_to: Option<PathBuf> = None;
 
         ui.horizontal(|ui| {
             ui.label(
                 RichText::new("◈ PATH")
-                    .color(CYAN)
+                    .color(t.primary())
                     .monospace()
                     .size(11.0)
                     .strong(),
@@ -381,12 +382,12 @@ impl CyberFile {
                 accumulated.push(component);
                 let comp_str = component.as_os_str().to_string_lossy();
 
-                ui.label(RichText::new("›").color(TEXT_DIM).monospace().size(12.0));
+                ui.label(RichText::new("›").color(t.text_dim()).monospace().size(12.0));
 
                 if ui
                     .link(
                         RichText::new(comp_str.as_ref())
-                            .color(CYAN_DIM)
+                            .color(t.primary_dim())
                             .monospace()
                             .size(12.0),
                     )
