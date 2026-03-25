@@ -157,6 +157,11 @@ impl CyberFile {
                         ("CLOAKED FILES", self.show_hidden, "Ctrl+H", t.warning()),
                         ("BOOT SEQUENCE", self.settings.boot_sequence, "", t.primary()),
                         ("DATA RAIN", self.data_rain_enabled, "F10", t.success()),
+                        ("NEON GLOW", self.neon_glow, "F8", t.accent()),
+                        ("CHROM ABERR", self.chromatic_aberration, "F6", t.danger()),
+                        ("HOLO NOISE", self.holographic_noise, "", t.primary()),
+                        ("LOW MOTION", self.reduced_motion, "", t.text_dim()),
+                        ("HI CONTRAST", self.high_contrast, "", t.warning()),
                     ];
 
                     for (i, (name, state, key, on_color)) in display_toggles.iter().enumerate() {
@@ -181,6 +186,32 @@ impl CyberFile {
                                 4 => {
                                     self.data_rain_enabled = !self.data_rain_enabled;
                                 }
+                                5 => {
+                                    self.neon_glow = !self.neon_glow;
+                                    self.settings.neon_glow = self.neon_glow;
+                                }
+                                6 => {
+                                    self.chromatic_aberration = !self.chromatic_aberration;
+                                    self.settings.chromatic_aberration = self.chromatic_aberration;
+                                }
+                                7 => {
+                                    self.holographic_noise = !self.holographic_noise;
+                                    self.settings.holographic_noise = self.holographic_noise;
+                                }
+                                8 => {
+                                    self.reduced_motion = !self.reduced_motion;
+                                    self.settings.reduced_motion = self.reduced_motion;
+                                    // When reduced motion enabled, disable animated effects
+                                    if self.reduced_motion {
+                                        self.data_rain_enabled = false;
+                                        self.chromatic_aberration = false;
+                                        self.holographic_noise = false;
+                                    }
+                                }
+                                9 => {
+                                    self.high_contrast = !self.high_contrast;
+                                    self.settings.high_contrast = self.high_contrast;
+                                }
                                 _ => {}
                             }
                         }
@@ -200,6 +231,7 @@ impl CyberFile {
                         ("SIDEBAR", self.sidebar_visible, "Ctrl+B", t.primary()),
                         ("VITAL SIGNS", self.resource_monitor_visible, "F3", t.primary()),
                         ("CONFIRM DEL", self.settings.confirm_delete, "", t.success()),
+                        ("SOUND FX", self.sound_enabled, "", t.accent()),
                     ];
 
                     for (i, (name, state, key, on_color)) in interface_toggles.iter().enumerate() {
@@ -212,6 +244,10 @@ impl CyberFile {
                                 }
                                 2 => {
                                     self.settings.confirm_delete = !self.settings.confirm_delete;
+                                }
+                                3 => {
+                                    self.sound_enabled = !self.sound_enabled;
+                                    self.settings.sound_enabled = self.sound_enabled;
                                 }
                                 _ => {}
                             }

@@ -21,6 +21,8 @@ impl CyberFile {
 
             let mut close_tab: Option<usize> = None;
             let mut switch_tab: Option<usize> = None;
+            let mut drag_from: Option<usize> = None;
+            let mut drop_to: Option<usize> = None;
 
             for i in 0..tab_count {
                 let is_active = i == self.active_tab;
@@ -89,10 +91,18 @@ impl CyberFile {
                         });
                     })
                     .response
-                    .interact(egui::Sense::click());
+                    .interact(egui::Sense::click_and_drag());
 
                 if resp.clicked() {
                     switch_tab = Some(i);
+                }
+
+                // Tab drag-to-reorder
+                if resp.dragged() {
+                    drag_from = Some(i);
+                }
+                if resp.hovered() && ui.input(|inp| inp.pointer.any_released()) {
+                    drop_to = Some(i);
                 }
             }
 
@@ -115,6 +125,21 @@ impl CyberFile {
             }
             if let Some(i) = close_tab {
                 self.close_tab(i);
+            }
+            // Tab reorder via drag
+            if let (Some(from), Some(to)) = (drag_from, drop_to) {
+                if from != to && from < self.tabs.len() && to < self.tabs.len() {
+                    let tab = self.tabs.remove(from);
+                    self.tabs.insert(to, tab);
+                    // Adjust active_tab index
+                    if self.active_tab == from {
+                        self.active_tab = to;
+                    } else if from < self.active_tab && to >= self.active_tab {
+                        self.active_tab -= 1;
+                    } else if from > self.active_tab && to <= self.active_tab {
+                        self.active_tab += 1;
+                    }
+                }
             }
         });
 

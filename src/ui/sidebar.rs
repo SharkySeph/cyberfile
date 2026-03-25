@@ -6,18 +6,19 @@ use crate::theme::*;
 
 impl CyberFile {
     pub(crate) fn render_sidebar(&mut self, ctx: &egui::Context) {
+        let t = self.current_theme;
         egui::SidePanel::left("sidebar_panel")
             .default_width(self.settings.sidebar_width)
             .resizable(true)
             .frame(
                 egui::Frame::new()
-                    .fill(SURFACE)
+                    .fill(t.surface())
                     .inner_margin(egui::Margin::symmetric(10, 8))
-                    .stroke(egui::Stroke::new(1.0, BORDER_DIM)),
+                    .stroke(egui::Stroke::new(1.0, t.border_dim())),
             )
             .show(ctx, |ui| {
                 // ── Quick Access ────────────────────────────────
-                section_header(ui, "QUICK ACCESS");
+                section_header(ui, "QUICK ACCESS", t.primary());
                 ui.add_space(4.0);
 
                 let quick_access: Vec<(&str, Option<PathBuf>)> = vec![
@@ -37,7 +38,7 @@ impl CyberFile {
                     if let Some(path) = dir {
                         let is_current = self.current_path == *path;
                         let text = RichText::new(*label)
-                            .color(if is_current { CYAN } else { TEXT_PRIMARY })
+                            .color(if is_current { t.primary() } else { t.text_primary() })
                             .monospace()
                             .size(12.5);
 
@@ -48,17 +49,17 @@ impl CyberFile {
                 }
 
                 ui.add_space(8.0);
-                cyber_separator(ui);
+                cyber_separator_themed(ui, t.border_dim());
                 ui.add_space(4.0);
 
                 // ── Neural Links (Bookmarks) ───────────────────
-                section_header(ui, "NEURAL LINKS");
+                section_header(ui, "NEURAL LINKS", t.primary());
                 ui.add_space(4.0);
 
                 if self.bookmarks.is_empty() {
                     ui.label(
                         RichText::new("  No links saved")
-                            .color(TEXT_DIM)
+                            .color(t.text_dim())
                             .monospace()
                             .size(11.0),
                     );
@@ -76,7 +77,7 @@ impl CyberFile {
 
                         ui.horizontal(|ui| {
                             let text = RichText::new(format!("▪ {}", label))
-                                .color(if is_current { CYAN } else { TEXT_PRIMARY })
+                                .color(if is_current { t.primary() } else { t.text_primary() })
                                 .monospace()
                                 .size(12.0);
 
@@ -86,7 +87,7 @@ impl CyberFile {
 
                             // Remove button
                             if ui
-                                .small_button(RichText::new("✕").color(DANGER).size(10.0))
+                                .small_button(RichText::new("✕").color(t.danger()).size(10.0))
                                 .clicked()
                             {
                                 remove_idx = Some(i);
@@ -105,7 +106,7 @@ impl CyberFile {
                 if ui
                     .button(
                         RichText::new("+ SAVE NEURAL LINK")
-                            .color(CYAN_DIM)
+                            .color(t.primary_dim())
                             .monospace()
                             .size(11.0),
                     )
@@ -118,11 +119,11 @@ impl CyberFile {
                 }
 
                 ui.add_space(8.0);
-                cyber_separator(ui);
+                cyber_separator_themed(ui, t.border_dim());
                 ui.add_space(4.0);
 
                 // ── Disk Info ──────────────────────────────────
-                section_header(ui, "SYSTEM STATUS");
+                section_header(ui, "SYSTEM STATUS", t.primary());
                 ui.add_space(4.0);
 
                 // Show basic disk stats for current path (cached, refreshed every 10s)
@@ -158,25 +159,25 @@ impl CyberFile {
                 if let Some((total, used, free, load)) = &self.disk_info_cache {
                     ui.label(
                         RichText::new(format!("  TOTAL: {}", total))
-                            .color(TEXT_DIM)
+                            .color(t.text_dim())
                             .monospace()
                             .size(11.0),
                     );
                     ui.label(
                         RichText::new(format!("  USED:  {}", used))
-                            .color(TEXT_DIM)
+                            .color(t.text_dim())
                             .monospace()
                             .size(11.0),
                     );
                     ui.label(
                         RichText::new(format!("  FREE:  {}", free))
-                            .color(SUCCESS)
+                            .color(t.success())
                             .monospace()
                             .size(11.0),
                     );
                     ui.label(
                         RichText::new(format!("  LOAD:  {}", load))
-                            .color(YELLOW)
+                            .color(t.warning())
                             .monospace()
                             .size(11.0),
                     );
@@ -186,14 +187,93 @@ impl CyberFile {
                     ui.add_space(8.0);
                     ui.label(
                         RichText::new(format!("⚠ {}", msg.0))
-                            .color(DANGER)
+                            .color(t.danger())
                             .monospace()
                             .size(11.0),
                     );
                 }
 
                 ui.add_space(8.0);
-                cyber_separator(ui);
+                cyber_separator_themed(ui, t.border_dim());
+                ui.add_space(4.0);
+
+                // ── Containment Zone (Trash) ─────────────────
+                section_header(ui, "CONTAINMENT ZONE", t.primary());
+                ui.add_space(4.0);
+
+                let trash_count = crate::filesystem::list_trash().len();
+                let trash_label = if trash_count == 0 {
+                    "  Zone clear".to_string()
+                } else {
+                    format!("  {} quarantined", trash_count)
+                };
+                let trash_color = if trash_count == 0 { t.text_dim() } else { t.warning() };
+
+                ui.label(
+                    RichText::new(&trash_label)
+                        .color(trash_color)
+                        .monospace()
+                        .size(11.0),
+                );
+
+                ui.add_space(4.0);
+                if ui
+                    .button(
+                        RichText::new("⟐ OPEN CONTAINMENT")
+                            .color(if trash_count > 0 { t.danger() } else { t.primary_dim() })
+                            .monospace()
+                            .size(11.0),
+                    )
+                    .clicked()
+                {
+                    self.trash_entries = crate::filesystem::list_trash();
+                    self.trash_view_open = true;
+                }
+
+                ui.add_space(8.0);
+                cyber_separator_themed(ui, t.border_dim());
+                ui.add_space(4.0);
+
+                // ── Remote Access ──────────────────────────────
+                section_header(ui, "NET RUNNER", t.primary());
+                ui.add_space(4.0);
+
+                if let Some(ref conn) = self.sftp_connection {
+                    ui.label(
+                        RichText::new(format!("  ◉ {}", conn.display_name()))
+                            .color(t.success())
+                            .monospace()
+                            .size(11.0),
+                    );
+                    ui.add_space(2.0);
+                } else {
+                    ui.label(
+                        RichText::new("  No active uplink")
+                            .color(t.text_dim())
+                            .monospace()
+                            .size(11.0),
+                    );
+                    ui.add_space(2.0);
+                }
+
+                if ui
+                    .button(
+                        RichText::new("⟐ REMOTE NODE [F9]")
+                            .color(if self.sftp_connection.is_some() {
+                                t.success()
+                            } else {
+                                t.primary_dim()
+                            })
+                            .monospace()
+                            .size(11.0),
+                    )
+                    .clicked()
+                {
+                    self.sftp_dialog = true;
+                }
+
+                ui.add_space(8.0);
+                cyber_separator_themed(ui, t.border_dim());
                 ui.add_space(4.0);
 
                 // ── Music Widget ───────────────────────────────

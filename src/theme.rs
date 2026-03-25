@@ -9,6 +9,10 @@ pub enum CyberTheme {
     Section9,
     MagiSystem,
     Gibson,
+    Tyrell,
+    Akira,
+    Wintermute,
+    Outrun,
 }
 
 impl Default for CyberTheme {
@@ -19,7 +23,16 @@ impl Default for CyberTheme {
 
 impl CyberTheme {
     pub fn all() -> &'static [CyberTheme] {
-        &[Self::NightCity, Self::Section9, Self::MagiSystem, Self::Gibson]
+        &[
+            Self::NightCity,
+            Self::Section9,
+            Self::MagiSystem,
+            Self::Gibson,
+            Self::Tyrell,
+            Self::Akira,
+            Self::Wintermute,
+            Self::Outrun,
+        ]
     }
 
     pub fn name(&self) -> &'static str {
@@ -28,6 +41,10 @@ impl CyberTheme {
             Self::Section9 => "SECTION 9",
             Self::MagiSystem => "MAGI SYSTEM",
             Self::Gibson => "GIBSON",
+            Self::Tyrell => "TYRELL",
+            Self::Akira => "AKIRA",
+            Self::Wintermute => "WINTERMUTE",
+            Self::Outrun => "OUTRUN",
         }
     }
 
@@ -37,6 +54,10 @@ impl CyberTheme {
             Self::Section9 => "section9",
             Self::MagiSystem => "magi",
             Self::Gibson => "gibson",
+            Self::Tyrell => "tyrell",
+            Self::Akira => "akira",
+            Self::Wintermute => "wintermute",
+            Self::Outrun => "outrun",
         }
     }
 
@@ -46,6 +67,10 @@ impl CyberTheme {
             Self::Section9 => "Teal & violet // Public Security",
             Self::MagiSystem => "Orange & crimson // NERV terminal",
             Self::Gibson => "Amber phosphor // ICE breaker",
+            Self::Tyrell => "Steel blue & gold // off-world memories",
+            Self::Akira => "Capsule red & white // Neo-Tokyo express",
+            Self::Wintermute => "Ice blue & chrome // AI consciousness",
+            Self::Outrun => "Hot pink & electric // sunset grid",
         }
     }
 
@@ -54,6 +79,10 @@ impl CyberTheme {
             "section9" => Self::Section9,
             "magi" => Self::MagiSystem,
             "gibson" => Self::Gibson,
+            "tyrell" => Self::Tyrell,
+            "akira" => Self::Akira,
+            "wintermute" => Self::Wintermute,
+            "outrun" => Self::Outrun,
             _ => Self::NightCity,
         }
     }
@@ -64,6 +93,10 @@ impl CyberTheme {
             Self::Section9 => Color32::from_rgb(0x00, 0xD4, 0xAA),
             Self::MagiSystem => Color32::from_rgb(0xFF, 0x6B, 0x00),
             Self::Gibson => Color32::from_rgb(0xFF, 0xB0, 0x00),
+            Self::Tyrell => Color32::from_rgb(0x4A, 0x90, 0xD9),
+            Self::Akira => Color32::from_rgb(0xFF, 0x17, 0x44),
+            Self::Wintermute => Color32::from_rgb(0x88, 0xCC, 0xFF),
+            Self::Outrun => Color32::from_rgb(0xFF, 0x6E, 0xC7),
         }
     }
 
@@ -73,6 +106,10 @@ impl CyberTheme {
             Self::Section9 => Color32::from_rgb(0x00, 0x66, 0x55),
             Self::MagiSystem => Color32::from_rgb(0x99, 0x40, 0x00),
             Self::Gibson => Color32::from_rgb(0x88, 0x66, 0x00),
+            Self::Tyrell => Color32::from_rgb(0x2A, 0x55, 0x80),
+            Self::Akira => Color32::from_rgb(0x99, 0x10, 0x28),
+            Self::Wintermute => Color32::from_rgb(0x44, 0x66, 0x88),
+            Self::Outrun => Color32::from_rgb(0x99, 0x38, 0x78),
         }
     }
 
@@ -82,6 +119,10 @@ impl CyberTheme {
             Self::Section9 => Color32::from_rgb(0x9B, 0x59, 0xB6),
             Self::MagiSystem => Color32::from_rgb(0xDC, 0x14, 0x3C),
             Self::Gibson => Color32::from_rgb(0x00, 0xFF, 0x41),
+            Self::Tyrell => Color32::from_rgb(0xD4, 0xA5, 0x20),
+            Self::Akira => Color32::from_rgb(0xE0, 0xE0, 0xF0),
+            Self::Wintermute => Color32::from_rgb(0xC0, 0xC8, 0xD8),
+            Self::Outrun => Color32::from_rgb(0x00, 0xBF, 0xFF),
         }
     }
 
@@ -91,6 +132,10 @@ impl CyberTheme {
             Self::Section9 => Color32::from_rgb(0x5D, 0xAD, 0xE2),
             Self::MagiSystem => Color32::from_rgb(0xFF, 0xAA, 0x00),
             Self::Gibson => Color32::from_rgb(0xFF, 0xD7, 0x00),
+            Self::Tyrell => Color32::from_rgb(0xE8, 0xB8, 0x4D),
+            Self::Akira => Color32::from_rgb(0xFF, 0xAB, 0x40),
+            Self::Wintermute => Color32::from_rgb(0xA0, 0xD0, 0xFF),
+            Self::Outrun => Color32::from_rgb(0xFF, 0xD7, 0x00),
         }
     }
 
@@ -100,6 +145,10 @@ impl CyberTheme {
             Self::Section9 => Color32::from_rgb(0x08, 0x0A, 0x0C),
             Self::MagiSystem => Color32::from_rgb(0x0C, 0x08, 0x04),
             Self::Gibson => Color32::from_rgb(0x00, 0x00, 0x00),
+            Self::Tyrell => Color32::from_rgb(0x08, 0x0A, 0x10),
+            Self::Akira => Color32::from_rgb(0x0A, 0x06, 0x08),
+            Self::Wintermute => Color32::from_rgb(0x06, 0x08, 0x10),
+            Self::Outrun => Color32::from_rgb(0x0C, 0x00, 0x14),
         }
     }
 
@@ -109,6 +158,10 @@ impl CyberTheme {
             Self::Section9 => Color32::from_rgb(0x0E, 0x10, 0x12),
             Self::MagiSystem => Color32::from_rgb(0x12, 0x0E, 0x0A),
             Self::Gibson => Color32::from_rgb(0x04, 0x04, 0x00),
+            Self::Tyrell => Color32::from_rgb(0x0C, 0x10, 0x18),
+            Self::Akira => Color32::from_rgb(0x12, 0x0C, 0x10),
+            Self::Wintermute => Color32::from_rgb(0x0A, 0x0E, 0x18),
+            Self::Outrun => Color32::from_rgb(0x12, 0x00, 0x20),
         }
     }
 
@@ -118,6 +171,10 @@ impl CyberTheme {
             Self::Section9 => Color32::from_rgb(0x15, 0x18, 0x19),
             Self::MagiSystem => Color32::from_rgb(0x1A, 0x14, 0x10),
             Self::Gibson => Color32::from_rgb(0x0A, 0x0A, 0x00),
+            Self::Tyrell => Color32::from_rgb(0x12, 0x18, 0x20),
+            Self::Akira => Color32::from_rgb(0x1A, 0x12, 0x18),
+            Self::Wintermute => Color32::from_rgb(0x10, 0x16, 0x20),
+            Self::Outrun => Color32::from_rgb(0x1A, 0x06, 0x2C),
         }
     }
 
@@ -127,6 +184,10 @@ impl CyberTheme {
             Self::Section9 => Color32::from_rgb(0xE7, 0x4C, 0x3C),
             Self::MagiSystem => Color32::from_rgb(0xFF, 0x00, 0x00),
             Self::Gibson => Color32::from_rgb(0xFF, 0x00, 0x00),
+            Self::Tyrell => Color32::from_rgb(0xCC, 0x33, 0x33),
+            Self::Akira => Color32::from_rgb(0xFF, 0x00, 0x00),
+            Self::Wintermute => Color32::from_rgb(0xFF, 0x44, 0x44),
+            Self::Outrun => Color32::from_rgb(0xFF, 0x22, 0x22),
         }
     }
 
@@ -136,6 +197,10 @@ impl CyberTheme {
             Self::Section9 => Color32::from_rgb(0x1A, 0xBC, 0x9C),
             Self::MagiSystem => Color32::from_rgb(0xAA, 0xFF, 0x00),
             Self::Gibson => Color32::from_rgb(0x00, 0xFF, 0x41),
+            Self::Tyrell => Color32::from_rgb(0x4C, 0xAF, 0x50),
+            Self::Akira => Color32::from_rgb(0x76, 0xFF, 0x03),
+            Self::Wintermute => Color32::from_rgb(0x44, 0xFF, 0xAA),
+            Self::Outrun => Color32::from_rgb(0x00, 0xFF, 0x88),
         }
     }
 
@@ -145,6 +210,10 @@ impl CyberTheme {
             Self::Section9 => Color32::from_rgb(0xC8, 0xD0, 0xD8),
             Self::MagiSystem => Color32::from_rgb(0xE0, 0xD8, 0xCC),
             Self::Gibson => Color32::from_rgb(0xFF, 0xB0, 0x00),
+            Self::Tyrell => Color32::from_rgb(0xB8, 0xC4, 0xD0),
+            Self::Akira => Color32::from_rgb(0xE8, 0xE0, 0xE4),
+            Self::Wintermute => Color32::from_rgb(0xD0, 0xD8, 0xE8),
+            Self::Outrun => Color32::from_rgb(0xE8, 0xD8, 0xF0),
         }
     }
 
@@ -154,6 +223,10 @@ impl CyberTheme {
             Self::Section9 => Color32::from_rgb(0x4A, 0x55, 0x68),
             Self::MagiSystem => Color32::from_rgb(0x7A, 0x6A, 0x5A),
             Self::Gibson => Color32::from_rgb(0x66, 0x55, 0x00),
+            Self::Tyrell => Color32::from_rgb(0x4A, 0x56, 0x68),
+            Self::Akira => Color32::from_rgb(0x6A, 0x55, 0x60),
+            Self::Wintermute => Color32::from_rgb(0x4A, 0x58, 0x78),
+            Self::Outrun => Color32::from_rgb(0x6A, 0x4A, 0x7A),
         }
     }
 
@@ -163,6 +236,10 @@ impl CyberTheme {
             Self::Section9 => Color32::from_rgb(0x1A, 0x1E, 0x24),
             Self::MagiSystem => Color32::from_rgb(0x2A, 0x20, 0x18),
             Self::Gibson => Color32::from_rgb(0x1A, 0x14, 0x00),
+            Self::Tyrell => Color32::from_rgb(0x1A, 0x20, 0x30),
+            Self::Akira => Color32::from_rgb(0x2A, 0x18, 0x20),
+            Self::Wintermute => Color32::from_rgb(0x14, 0x1C, 0x2C),
+            Self::Outrun => Color32::from_rgb(0x20, 0x10, 0x30),
         }
     }
 
@@ -172,6 +249,10 @@ impl CyberTheme {
             Self::Section9 => Color32::from_rgb(0x00, 0x88, 0x6A),
             Self::MagiSystem => Color32::from_rgb(0x88, 0x44, 0x00),
             Self::Gibson => Color32::from_rgb(0x88, 0x66, 0x00),
+            Self::Tyrell => Color32::from_rgb(0x2A, 0x40, 0x60),
+            Self::Akira => Color32::from_rgb(0x66, 0x10, 0x20),
+            Self::Wintermute => Color32::from_rgb(0x2A, 0x3C, 0x5C),
+            Self::Outrun => Color32::from_rgb(0x4A, 0x20, 0x60),
         }
     }
 
@@ -181,6 +262,10 @@ impl CyberTheme {
             Self::Section9 => Color32::from_rgba_premultiplied(0x9B, 0x59, 0xB6, 0x25),
             Self::MagiSystem => Color32::from_rgba_premultiplied(0xFF, 0x6B, 0x00, 0x25),
             Self::Gibson => Color32::from_rgba_premultiplied(0x00, 0xFF, 0x41, 0x25),
+            Self::Tyrell => Color32::from_rgba_premultiplied(0xD4, 0xA5, 0x20, 0x25),
+            Self::Akira => Color32::from_rgba_premultiplied(0xFF, 0x17, 0x44, 0x25),
+            Self::Wintermute => Color32::from_rgba_premultiplied(0xC0, 0xC8, 0xD8, 0x25),
+            Self::Outrun => Color32::from_rgba_premultiplied(0x00, 0xBF, 0xFF, 0x25),
         }
     }
 }
@@ -189,15 +274,19 @@ impl CyberTheme {
 pub const CYAN: Color32 = Color32::from_rgb(0x00, 0xF0, 0xFF);
 pub const CYAN_DIM: Color32 = Color32::from_rgb(0x00, 0x80, 0x99);
 pub const MAGENTA: Color32 = Color32::from_rgb(0xFF, 0x20, 0x79);
+#[allow(dead_code)]
 pub const YELLOW: Color32 = Color32::from_rgb(0xF7, 0xF3, 0x2A);
 pub const BG_DARK: Color32 = Color32::from_rgb(0x0A, 0x0A, 0x0F);
+#[allow(dead_code)]
 pub const SURFACE: Color32 = Color32::from_rgb(0x0D, 0x11, 0x17);
 #[allow(dead_code)]
 pub const SURFACE_RAISED: Color32 = Color32::from_rgb(0x12, 0x18, 0x22);
+#[allow(dead_code)]
 pub const DANGER: Color32 = Color32::from_rgb(0xFF, 0x33, 0x33);
 pub const SUCCESS: Color32 = Color32::from_rgb(0x39, 0xFF, 0x14);
 pub const TEXT_PRIMARY: Color32 = Color32::from_rgb(0xE0, 0xE0, 0xE8);
 pub const TEXT_DIM: Color32 = Color32::from_rgb(0x4A, 0x7A, 0x7F);
+#[allow(dead_code)]
 pub const BORDER_DIM: Color32 = Color32::from_rgb(0x1A, 0x2A, 0x33);
 #[allow(dead_code)]
 pub const BORDER_ACTIVE: Color32 = Color32::from_rgb(0x00, 0x60, 0x66);
@@ -296,17 +385,18 @@ pub fn apply_cyber_theme(ctx: &egui::Context, theme: CyberTheme) {
 
 // ── Helper Functions ───────────────────────────────────────────
 
-pub fn section_header(ui: &mut egui::Ui, label: &str) {
+pub fn section_header(ui: &mut egui::Ui, label: &str, color: Color32) {
     ui.horizontal(|ui| {
         ui.label(
             egui::RichText::new(format!("\u{25C8} {}", label))
-                .color(CYAN)
+                .color(color)
                 .strong()
                 .size(13.0),
         );
     });
 }
 
+#[allow(dead_code)]
 pub fn cyber_separator(ui: &mut egui::Ui) {
     let rect = ui.available_rect_before_wrap();
     let y = rect.top() + 2.0;

@@ -185,6 +185,139 @@ impl CyberFile {
             }
         }
 
+        // ── Neon Glow / Bloom ──────────────────────────────
+        // Draws subtle colored glow rectangles at screen edges in theme color
+        if self.neon_glow {
+            let painter = ctx.layer_painter(egui::LayerId::new(
+                egui::Order::Foreground,
+                egui::Id::new("neon_glow"),
+            ));
+            let t = self.current_theme;
+            let glow_size = 40.0;
+            let steps = 8;
+
+            for i in 0..steps {
+                let frac = i as f32 / steps as f32;
+                let alpha = ((1.0 - frac) * 12.0) as u8;
+                let offset = frac * glow_size;
+                let pc = t.primary();
+                let ac = t.accent();
+
+                // Top glow (primary)
+                painter.rect_filled(
+                    egui::Rect::from_min_max(
+                        egui::pos2(screen.left(), screen.top() + offset),
+                        egui::pos2(screen.right(), screen.top() + offset + glow_size / steps as f32),
+                    ),
+                    0.0,
+                    Color32::from_rgba_premultiplied(pc.r(), pc.g(), pc.b(), alpha),
+                );
+                // Bottom glow (accent)
+                painter.rect_filled(
+                    egui::Rect::from_min_max(
+                        egui::pos2(screen.left(), screen.bottom() - offset - glow_size / steps as f32),
+                        egui::pos2(screen.right(), screen.bottom() - offset),
+                    ),
+                    0.0,
+                    Color32::from_rgba_premultiplied(ac.r(), ac.g(), ac.b(), alpha),
+                );
+                // Left glow (primary)
+                painter.rect_filled(
+                    egui::Rect::from_min_max(
+                        egui::pos2(screen.left() + offset, screen.top()),
+                        egui::pos2(screen.left() + offset + glow_size / steps as f32, screen.bottom()),
+                    ),
+                    0.0,
+                    Color32::from_rgba_premultiplied(pc.r(), pc.g(), pc.b(), alpha),
+                );
+                // Right glow (accent)
+                painter.rect_filled(
+                    egui::Rect::from_min_max(
+                        egui::pos2(screen.right() - offset - glow_size / steps as f32, screen.top()),
+                        egui::pos2(screen.right() - offset, screen.bottom()),
+                    ),
+                    0.0,
+                    Color32::from_rgba_premultiplied(ac.r(), ac.g(), ac.b(), alpha),
+                );
+            }
+        }
+
+        // ── Chromatic Aberration ────────────────────────────
+        // Subtle color-shifted bars that shift over time
+        if self.chromatic_aberration {
+            let painter = ctx.layer_painter(egui::LayerId::new(
+                egui::Order::Foreground,
+                egui::Id::new("chromatic_aberration"),
+            ));
+            let time = self.frame_count as f32 * 0.02;
+            let bar_count = 5;
+            let bar_height = 1.0;
+
+            for i in 0..bar_count {
+                let base_y = screen.top() + ((i as f32 * 173.7 + time * 20.0) % screen.height());
+                // Red channel shift (left)
+                painter.rect_filled(
+                    egui::Rect::from_min_size(
+                        egui::pos2(screen.left() - 2.0, base_y),
+                        egui::vec2(screen.width(), bar_height),
+                    ),
+                    0.0,
+                    Color32::from_rgba_premultiplied(255, 0, 0, 8),
+                );
+                // Blue channel shift (right)
+                painter.rect_filled(
+                    egui::Rect::from_min_size(
+                        egui::pos2(screen.left() + 2.0, base_y + 1.0),
+                        egui::vec2(screen.width(), bar_height),
+                    ),
+                    0.0,
+                    Color32::from_rgba_premultiplied(0, 0, 255, 8),
+                );
+            }
+            ctx.request_repaint();
+        }
+
+        // ── Holographic Noise ──────────────────────────────
+        // Animated noise grid of tiny colored cells
+        if self.holographic_noise {
+            let painter = ctx.layer_painter(egui::LayerId::new(
+                egui::Order::Foreground,
+                egui::Id::new("holographic_noise"),
+            ));
+            let t = self.current_theme;
+            let cell_size = 24.0;
+            let frame = self.frame_count;
+
+            let cols = (screen.width() / cell_size) as usize + 1;
+            let rows = (screen.height() / cell_size) as usize + 1;
+
+            for row in 0..rows {
+                for col in 0..cols {
+                    // Simple hash for pseudo-random appearance
+                    let hash = ((row * 131 + col * 97 + frame as usize * 37) % 256) as u8;
+                    // Only render sparse noise (low density)
+                    if hash > 12 {
+                        continue;
+                    }
+                    let pc = t.primary();
+                    let alpha = (hash % 6) + 3; // 3-8 alpha
+                    let color = Color32::from_rgba_premultiplied(pc.r(), pc.g(), pc.b(), alpha);
+                    painter.rect_filled(
+                        egui::Rect::from_min_size(
+                            egui::pos2(
+                                screen.left() + col as f32 * cell_size,
+                                screen.top() + row as f32 * cell_size,
+                            ),
+                            egui::vec2(cell_size, cell_size),
+                        ),
+                        0.0,
+                        color,
+                    );
+                }
+            }
+            ctx.request_repaint();
+        }
+
         // ── HUD Corner Brackets ────────────────────────────
         {
             let painter = ctx.layer_painter(egui::LayerId::new(
@@ -223,6 +356,32 @@ impl CyberFile {
             painter.line_segment(
                 [egui::pos2(r.right(), r.bottom() - size), r.right_bottom()],
                 s,
+            );
+        }
+
+        // ── High Contrast Mode ─────────────────────────────
+        if self.high_contrast {
+            let painter = ctx.layer_painter(egui::LayerId::new(
+                egui::Order::Foreground,
+                egui::Id::new("high_contrast"),
+            ));
+            // Strong border frame
+            let inset = 2.0;
+            let frame = egui::Rect::from_min_max(
+                egui::pos2(screen.left() + inset, screen.top() + inset),
+                egui::pos2(screen.right() - inset, screen.bottom() - inset),
+            );
+            painter.rect_stroke(
+                frame,
+                0.0,
+                Stroke::new(2.0, Color32::WHITE),
+                egui::StrokeKind::Outside,
+            );
+            // Subtle bright overlay to boost readability
+            painter.rect_filled(
+                screen,
+                0.0,
+                Color32::from_rgba_premultiplied(255, 255, 255, 6),
             );
         }
     }

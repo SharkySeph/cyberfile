@@ -224,7 +224,16 @@ impl CyberFile {
             {
                 use std::os::unix::fs::MetadataExt;
                 meta_line(ui, "INODE", &format!("{}", meta.ino()), t.text_dim());
-                meta_line(ui, "UID/GID", &format!("{}/{}", meta.uid(), meta.gid()), t.text_dim());
+                let uid = meta.uid();
+                let gid = meta.gid();
+                let user_name = uzers::get_user_by_uid(uid)
+                    .map(|u| u.name().to_string_lossy().to_string())
+                    .unwrap_or_else(|| uid.to_string());
+                let group_name = uzers::get_group_by_gid(gid)
+                    .map(|g| g.name().to_string_lossy().to_string())
+                    .unwrap_or_else(|| gid.to_string());
+                meta_line(ui, "OWNER", &format!("{} ({})", user_name, uid), t.text_dim());
+                meta_line(ui, "GROUP", &format!("{} ({})", group_name, gid), t.text_dim());
                 meta_line(
                     ui,
                     "ACCESS",
@@ -280,19 +289,23 @@ impl CyberFile {
 
             match read_result {
                 Ok(content) => {
-                    let preview: String = content.lines().take(80).enumerate().map(|(i, line)| {
-                        format!("{:>4} │ {}\n", i + 1, line)
-                    }).collect();
-
                     egui::ScrollArea::vertical()
                         .max_height(ui.available_height() - 30.0)
                         .show(ui, |ui| {
-                            ui.label(
-                                RichText::new(preview.trim_end())
-                                    .color(t.text_primary())
-                                    .monospace()
-                                    .size(9.5),
-                            );
+                            let keywords = Self::keywords_for_ext(&ext);
+                            for (i, line) in content.lines().take(80).enumerate() {
+                                ui.horizontal(|ui| {
+                                    // Line number
+                                    ui.label(
+                                        RichText::new(format!("{:>4} │", i + 1))
+                                            .color(t.text_dim())
+                                            .monospace()
+                                            .size(9.5),
+                                    );
+                                    // Syntax-colored line
+                                    Self::render_syntax_line(ui, line, &keywords, t);
+                                });
+                            }
                         });
                 }
                 Err(_) => {
@@ -312,19 +325,71 @@ impl CyberFile {
             self.render_preview_type_badge(ui, "VIDEO FEED", "Motion capture data", t.warning());
         } else if is_archive {
             self.render_preview_type_badge(ui, "COMPRESSED ARCHIVE", "Packed data container", t.primary());
-            // Try to list archive contents
-            if let Ok(output) = std::process::Command::new("file")
-                .arg(path)
-                .output()
-            {
-                let info = String::from_utf8_lossy(&output.stdout);
-                ui.add_space(4.0);
-                ui.label(
-                    RichText::new(format!("│ {}", info.trim()))
-                        .color(t.text_dim())
-                        .monospace()
-                        .size(9.0),
-                );
+
+            // Try to list ZIP contents
+            if ext == "zip" {
+                match crate::filesystem::list_zip_contents(path) {
+                    Ok(entries) => {
+                        ui.add_space(4.0);
+                        ui.label(
+                            RichText::new(format!("│ {} entries in archive", entries.len()))
+                                .color(t.warning())
+                                .monospace()
+                                .size(10.0),
+                        );
+                        ui.add_space(2.0);
+                        egui::ScrollArea::vertical()
+                            .max_height(200.0)
+                            .show(ui, |ui| {
+                                for (name, size, is_dir) in entries.iter().take(50) {
+                                    let icon = if *is_dir { "◆" } else { "◇" };
+                                    let size_str = if *is_dir {
+                                        String::new()
+                                    } else {
+                                        format!(" ({})", bytesize::ByteSize(*size))
+                                    };
+                                    ui.label(
+                                        RichText::new(format!("  {} {}{}", icon, name, size_str))
+                                            .color(if *is_dir { t.primary() } else { t.text_primary() })
+                                            .monospace()
+                                            .size(9.0),
+                                    );
+                                }
+                                if entries.len() > 50 {
+                                    ui.label(
+                                        RichText::new(format!("  ... and {} more", entries.len() - 50))
+                                            .color(t.text_dim())
+                                            .monospace()
+                                            .size(9.0),
+                                    );
+                                }
+                            });
+                    }
+                    Err(e) => {
+                        ui.add_space(4.0);
+                        ui.label(
+                            RichText::new(format!("│ Cannot read archive: {}", e))
+                                .color(t.danger())
+                                .monospace()
+                                .size(9.0),
+                        );
+                    }
+                }
+            } else {
+                // Non-ZIP archives — show file info
+                if let Ok(output) = std::process::Command::new("file")
+                    .arg(path)
+                    .output()
+                {
+                    let info = String::from_utf8_lossy(&output.stdout);
+                    ui.add_space(4.0);
+                    ui.label(
+                        RichText::new(format!("│ {}", info.trim()))
+                            .color(t.text_dim())
+                            .monospace()
+                            .size(9.0),
+                    );
+                }
             }
         } else {
             // Binary — show hex peek
@@ -488,6 +553,199 @@ impl CyberFile {
                         .size(10.0),
                 );
             }
+        }
+    }
+
+    /// Get keywords for syntax highlighting based on file extension.
+    fn keywords_for_ext(ext: &str) -> Vec<&'static str> {
+        match ext {
+            "rs" => vec![
+                "fn", "let", "mut", "pub", "use", "mod", "struct", "enum", "impl", "trait",
+                "self", "Self", "super", "crate", "const", "static", "type", "where",
+                "if", "else", "match", "for", "while", "loop", "break", "continue", "return",
+                "as", "in", "ref", "move", "async", "await", "unsafe", "dyn", "true", "false",
+            ],
+            "py" => vec![
+                "def", "class", "import", "from", "return", "if", "elif", "else",
+                "for", "while", "break", "continue", "with", "as", "try", "except",
+                "finally", "raise", "yield", "lambda", "pass", "None", "True", "False",
+                "self", "async", "await", "in", "not", "and", "or", "is",
+            ],
+            "js" | "ts" => vec![
+                "function", "const", "let", "var", "return", "if", "else", "for",
+                "while", "do", "switch", "case", "break", "continue", "class",
+                "extends", "import", "export", "from", "default", "new", "this",
+                "async", "await", "try", "catch", "finally", "throw", "typeof",
+                "true", "false", "null", "undefined",
+            ],
+            "c" | "cpp" | "h" | "hpp" => vec![
+                "int", "float", "double", "char", "void", "bool", "long", "short",
+                "unsigned", "signed", "const", "static", "extern", "struct", "union",
+                "enum", "typedef", "class", "public", "private", "protected",
+                "if", "else", "for", "while", "do", "switch", "case", "break",
+                "continue", "return", "include", "define", "true", "false", "nullptr",
+            ],
+            "go" => vec![
+                "func", "package", "import", "return", "if", "else", "for", "range",
+                "switch", "case", "break", "continue", "struct", "interface", "type",
+                "var", "const", "defer", "go", "chan", "map", "select", "nil", "true", "false",
+            ],
+            "sh" | "bash" | "zsh" => vec![
+                "if", "then", "else", "elif", "fi", "for", "while", "do", "done",
+                "case", "esac", "function", "return", "exit", "echo", "export",
+                "local", "readonly", "set", "unset", "source", "true", "false",
+            ],
+            "toml" | "yaml" | "yml" | "ini" | "conf" | "cfg" => vec![
+                "true", "false", "null", "yes", "no",
+            ],
+            "java" => vec![
+                "public", "private", "protected", "class", "interface", "extends",
+                "implements", "static", "final", "void", "int", "boolean", "String",
+                "return", "if", "else", "for", "while", "do", "switch", "case",
+                "break", "continue", "new", "this", "super", "import", "package",
+                "try", "catch", "finally", "throw", "throws", "true", "false", "null",
+            ],
+            "rb" => vec![
+                "def", "class", "module", "end", "if", "elsif", "else", "unless",
+                "while", "until", "for", "do", "begin", "rescue", "ensure", "raise",
+                "return", "yield", "require", "include", "attr_accessor", "nil",
+                "true", "false", "self", "super",
+            ],
+            "html" | "xml" => vec![
+                "html", "head", "body", "div", "span", "class", "id", "style",
+                "script", "link", "meta", "title", "src", "href", "type",
+            ],
+            "css" => vec![
+                "color", "background", "border", "margin", "padding", "display",
+                "position", "width", "height", "font", "text", "align", "flex",
+                "grid", "important", "none", "auto",
+            ],
+            _ => vec!["true", "false", "null", "nil", "none"],
+        }
+    }
+
+    /// Render a single line with basic syntax coloring.
+    fn render_syntax_line(
+        ui: &mut egui::Ui,
+        line: &str,
+        keywords: &[&str],
+        t: crate::theme::CyberTheme,
+    ) {
+        use eframe::egui::RichText;
+
+        let trimmed = line.trim_start();
+
+        // Comment detection (single-line)
+        if trimmed.starts_with("//") || trimmed.starts_with('#') || trimmed.starts_with("--") {
+            ui.label(
+                RichText::new(line)
+                    .color(t.text_dim())
+                    .monospace()
+                    .size(9.5),
+            );
+            return;
+        }
+
+        // String detection — whole line starts inside a string
+        if trimmed.starts_with('"') || trimmed.starts_with('\'') || trimmed.starts_with('`') {
+            ui.label(
+                RichText::new(line)
+                    .color(t.success())
+                    .monospace()
+                    .size(9.5),
+            );
+            return;
+        }
+
+        // Keyword coloring: check if any word in the line is a keyword
+        let mut has_keyword = false;
+        for word in line.split(|c: char| !c.is_alphanumeric() && c != '_') {
+            if keywords.contains(&word) {
+                has_keyword = true;
+                break;
+            }
+        }
+
+        if has_keyword {
+            // Build a colored layout using LayoutJob for mixed colors
+            let mut job = egui::text::LayoutJob::default();
+            let mut last_end = 0;
+
+            let chars: Vec<char> = line.chars().collect();
+            let mut i = 0;
+            while i < chars.len() {
+                // Skip non-word chars
+                if !chars[i].is_alphanumeric() && chars[i] != '_' {
+                    i += 1;
+                    continue;
+                }
+
+                let word_start = i;
+                while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_') {
+                    i += 1;
+                }
+                let word: String = chars[word_start..i].iter().collect();
+
+                // Append everything before this word as normal text
+                if word_start > last_end {
+                    let prefix: String = chars[last_end..word_start].iter().collect();
+                    job.append(
+                        &prefix,
+                        0.0,
+                        egui::TextFormat {
+                            font_id: egui::FontId::monospace(9.5),
+                            color: t.text_primary(),
+                            ..Default::default()
+                        },
+                    );
+                }
+
+                // Color the word
+                let color = if keywords.contains(&word.as_str()) {
+                    t.primary()
+                } else if word.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                    t.warning()
+                } else if word.chars().all(|c| c.is_ascii_digit()) {
+                    t.accent()
+                } else {
+                    t.text_primary()
+                };
+
+                job.append(
+                    &word,
+                    0.0,
+                    egui::TextFormat {
+                        font_id: egui::FontId::monospace(9.5),
+                        color,
+                        ..Default::default()
+                    },
+                );
+                last_end = i;
+            }
+
+            // Any trailing content
+            if last_end < chars.len() {
+                let trailing: String = chars[last_end..].iter().collect();
+                job.append(
+                    &trailing,
+                    0.0,
+                    egui::TextFormat {
+                        font_id: egui::FontId::monospace(9.5),
+                        color: t.text_primary(),
+                        ..Default::default()
+                    },
+                );
+            }
+
+            ui.label(job);
+        } else {
+            // Plain line — check for numbers
+            ui.label(
+                RichText::new(line)
+                    .color(t.text_primary())
+                    .monospace()
+                    .size(9.5),
+            );
         }
     }
 }

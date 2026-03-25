@@ -19,8 +19,18 @@ fn load_icon() -> Option<eframe::egui::IconData> {
 }
 
 fn main() -> eframe::Result {
+    let settings = config::Settings::load();
+
+    // Check for CLI path argument (D-Bus FileManager1 style)
+    let cli_path = integrations::dbus::parse_cli_path();
+
+    // Store CLI path for the app to pick up
+    if let Some(ref path) = cli_path {
+        std::env::set_var("CYBERFILE_START_PATH", path.to_string_lossy().as_ref());
+    }
+
     let mut viewport = eframe::egui::ViewportBuilder::default()
-        .with_inner_size([1280.0, 800.0])
+        .with_inner_size([settings.window_width, settings.window_height])
         .with_min_inner_size([800.0, 500.0])
         .with_title("CYBERFILE // OPERATOR TERMINAL");
 

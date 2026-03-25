@@ -1,58 +1,58 @@
 use eframe::egui::{self, RichText};
 
 use crate::app::{CyberFile, ViewMode};
-use crate::theme::*;
 
 impl CyberFile {
     pub(crate) fn render_command_bar(&mut self, ctx: &egui::Context) {
+        let t = self.current_theme;
         egui::TopBottomPanel::top("command_bar_panel")
             .frame(
                 egui::Frame::new()
-                    .fill(BG_DARK)
+                    .fill(t.bg_dark())
                     .inner_margin(egui::Margin::symmetric(10, 6))
-                    .stroke(egui::Stroke::new(1.0, BORDER_DIM)),
+                    .stroke(egui::Stroke::new(1.0, t.border_dim())),
             )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     // Title / brand
                     ui.label(
                         RichText::new("CYBERFILE")
-                            .color(CYAN)
+                            .color(t.primary())
                             .monospace()
                             .size(14.0)
                             .strong(),
                     );
                     ui.label(
                         RichText::new("//")
-                            .color(TEXT_DIM)
+                            .color(t.text_dim())
                             .monospace()
                             .size(14.0),
                     );
 
                     // Navigation buttons
                     if ui
-                        .button(RichText::new("◀").color(CYAN).monospace().size(13.0))
+                        .button(RichText::new("◀").color(t.primary()).monospace().size(13.0))
                         .on_hover_text("Go back")
                         .clicked()
                     {
                         self.go_back();
                     }
                     if ui
-                        .button(RichText::new("▶").color(CYAN).monospace().size(13.0))
+                        .button(RichText::new("▶").color(t.primary()).monospace().size(13.0))
                         .on_hover_text("Go forward")
                         .clicked()
                     {
                         self.go_forward();
                     }
                     if ui
-                        .button(RichText::new("▲").color(CYAN).monospace().size(13.0))
+                        .button(RichText::new("▲").color(t.primary()).monospace().size(13.0))
                         .on_hover_text("Go up")
                         .clicked()
                     {
                         self.go_up();
                     }
                     if ui
-                        .button(RichText::new("⟳").color(CYAN).monospace().size(13.0))
+                        .button(RichText::new("⟳").color(t.primary()).monospace().size(13.0))
                         .on_hover_text("Refresh")
                         .clicked()
                     {
@@ -64,7 +64,7 @@ impl CyberFile {
                     // Path / search input
                     ui.label(
                         RichText::new("▸")
-                            .color(if self.command_bar_active { MAGENTA } else { CYAN })
+                            .color(if self.command_bar_active { t.accent() } else { t.primary() })
                             .monospace()
                             .size(14.0),
                     );
@@ -73,10 +73,10 @@ impl CyberFile {
                         [ui.available_width() - 120.0, 20.0],
                         egui::TextEdit::singleline(&mut self.command_bar_text)
                             .font(egui::FontId::monospace(13.0))
-                            .text_color(TEXT_PRIMARY)
+                            .text_color(t.text_primary())
                             .hint_text(
                                 RichText::new("NEURAL INTERFACE // type path or search query")
-                                    .color(TEXT_DIM),
+                                    .color(t.text_dim()),
                             ),
                     );
 
@@ -94,7 +94,7 @@ impl CyberFile {
                     if ui
                         .button(
                             RichText::new(hidden_label)
-                                .color(if self.show_hidden { YELLOW } else { TEXT_DIM })
+                                .color(if self.show_hidden { t.warning() } else { t.text_dim() })
                                 .monospace()
                                 .size(13.0),
                         )
@@ -114,7 +114,7 @@ impl CyberFile {
                     if ui
                         .button(
                             RichText::new(sidebar_label)
-                                .color(CYAN_DIM)
+                                .color(t.primary_dim())
                                 .monospace()
                                 .size(13.0),
                         )
@@ -137,7 +137,7 @@ impl CyberFile {
                         if ui
                             .button(
                                 RichText::new(icon)
-                                    .color(if is_active { CYAN } else { TEXT_DIM })
+                                    .color(if is_active { t.primary() } else { t.text_dim() })
                                     .monospace()
                                     .size(13.0),
                             )
@@ -152,7 +152,7 @@ impl CyberFile {
                     if ui
                         .button(
                             RichText::new("◫")
-                                .color(if self.preview_visible { CYAN } else { TEXT_DIM })
+                                .color(if self.preview_visible { t.primary() } else { t.text_dim() })
                                 .monospace()
                                 .size(13.0),
                         )
@@ -167,7 +167,7 @@ impl CyberFile {
                         if ui
                             .button(
                                 RichText::new("⌕")
-                                    .color(MAGENTA)
+                                    .color(t.accent())
                                     .monospace()
                                     .size(13.0),
                             )

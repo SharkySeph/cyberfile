@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=CyberFile
+Comment=Cyberpunk-themed file manager for Linux
+GenericName=File Manager
+Exec=cyberfile %U
+Icon=cyberfile
+Terminal=false
+Type=Application
+Categories=System;FileTools;FileManager;
+MimeType=inode/directory;
+Keywords=file;manager;cyberpunk;neon;
+StartupWMClass=cyberfile

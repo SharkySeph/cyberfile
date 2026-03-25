@@ -1,55 +1,55 @@
 use eframe::egui::{self, RichText};
 
 use crate::app::{CyberFile, ViewMode};
-use crate::theme::*;
 
 impl CyberFile {
     pub(crate) fn render_status_bar(&mut self, ctx: &egui::Context) {
+        let t = self.current_theme;
         egui::TopBottomPanel::bottom("status_bar_panel")
             .frame(
                 egui::Frame::new()
-                    .fill(BG_DARK)
+                    .fill(t.bg_dark())
                     .inner_margin(egui::Margin::symmetric(10, 4))
-                    .stroke(egui::Stroke::new(1.0, BORDER_DIM)),
+                    .stroke(egui::Stroke::new(1.0, t.border_dim())),
             )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     // Current path
                     ui.label(
                         RichText::new(format!("[ {} ]", self.current_path.display()))
-                            .color(CYAN_DIM)
+                            .color(t.primary_dim())
                             .monospace()
                             .size(11.0),
                     );
 
                     ui.add_space(12.0);
-                    ui.label(RichText::new("|").color(BORDER_DIM).monospace().size(11.0));
+                    ui.label(RichText::new("|").color(t.border_dim()).monospace().size(11.0));
                     ui.add_space(12.0);
 
                     // Entry count
                     let count = self.entries.len();
                     ui.label(
                         RichText::new(format!("◈ {} constructs", count))
-                            .color(TEXT_DIM)
+                            .color(t.text_dim())
                             .monospace()
                             .size(11.0),
                     );
 
                     ui.add_space(12.0);
-                    ui.label(RichText::new("|").color(BORDER_DIM).monospace().size(11.0));
+                    ui.label(RichText::new("|").color(t.border_dim()).monospace().size(11.0));
                     ui.add_space(12.0);
 
                     // Total size of visible files
                     let total_size: u64 = self.entries.iter().map(|e| e.size).sum();
                     ui.label(
                         RichText::new(format!("◈ {}", bytesize::ByteSize(total_size)))
-                            .color(TEXT_DIM)
+                            .color(t.text_dim())
                             .monospace()
                             .size(11.0),
                     );
 
                     ui.add_space(12.0);
-                    ui.label(RichText::new("|").color(BORDER_DIM).monospace().size(11.0));
+                    ui.label(RichText::new("|").color(t.border_dim()).monospace().size(11.0));
                     ui.add_space(12.0);
 
                     // View mode indicator
@@ -61,7 +61,7 @@ impl CyberFile {
                     };
                     ui.label(
                         RichText::new(format!("◈ {}", mode_label))
-                            .color(CYAN)
+                            .color(t.primary())
                             .monospace()
                             .size(11.0),
                     );
@@ -71,7 +71,7 @@ impl CyberFile {
                         ui.add_space(6.0);
                         ui.label(
                             RichText::new("FZF")
-                                .color(MAGENTA)
+                                .color(t.accent())
                                 .monospace()
                                 .size(9.0),
                         );
@@ -85,7 +85,7 @@ impl CyberFile {
                             let time = chrono::Local::now().format("%H:%M:%S");
                             ui.label(
                                 RichText::new(format!("{}", time))
-                                    .color(CYAN_DIM)
+                                    .color(t.primary_dim())
                                     .monospace()
                                     .size(11.0),
                             );
@@ -93,7 +93,7 @@ impl CyberFile {
                             ui.add_space(12.0);
                             ui.label(
                                 RichText::new("|")
-                                    .color(BORDER_DIM)
+                                    .color(t.border_dim())
                                     .monospace()
                                     .size(11.0),
                             );
@@ -104,7 +104,7 @@ impl CyberFile {
                                 if let Some(entry) = self.entries.get(idx) {
                                     ui.label(
                                         RichText::new(format!("◈ SELECTED: {}", entry.name))
-                                            .color(MAGENTA)
+                                            .color(t.accent())
                                             .monospace()
                                             .size(11.0),
                                     );
@@ -112,7 +112,7 @@ impl CyberFile {
                             } else {
                                 ui.label(
                                     RichText::new(&self.status_message)
-                                        .color(TEXT_DIM)
+                                        .color(t.text_dim())
                                         .monospace()
                                         .size(11.0),
                                 );

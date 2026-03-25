@@ -141,10 +141,15 @@ impl CyberFile {
         });
         ui.add_space(4.0);
 
+        let filter_lower = self.filter_text.to_lowercase();
         let cells: Vec<HexCell> = self
             .entries
             .iter()
             .enumerate()
+            .filter(|(_, e)| {
+                self.filter_text.is_empty()
+                    || e.name.to_lowercase().contains(&filter_lower)
+            })
             .map(|(i, e)| HexCell {
                 index: i,
                 name: e.name.clone(),
@@ -161,10 +166,13 @@ impl CyberFile {
             .collect();
 
         let current_selected = self.selected;
-        let mut new_selected = self.selected;
+        let current_multi = self.multi_selected.clone();
+        let ctrl_held = ui.input(|i| i.modifiers.ctrl);
+        let shift_held = ui.input(|i| i.modifiers.shift);
         let mut open_index: Option<usize> = None;
         let mut context_index: Option<usize> = None;
         let mut blank_space_menu = false;
+        let mut click_action: Option<(usize, bool, bool)> = None;
 
         // Hex geometry — flat-top hexagons, scaled by zoom
         let hex_radius: f32 = 56.0 * zoom;
@@ -272,7 +280,8 @@ impl CyberFile {
                     let cx = origin.x + center_x + offset_x;
                     let cy = origin.y + center_y + offset_y;
 
-                    let is_sel = current_selected == Some(cell.index);
+                    let is_sel = current_selected == Some(cell.index)
+                        || current_multi.contains(&cell.index);
 
                     let points = hex_points(cx, cy, hex_radius - 2.0);
 
@@ -412,7 +421,7 @@ impl CyberFile {
                         let dist = (dx * dx + dy * dy).sqrt();
                         if dist < hex_radius - 4.0 {
                             if canvas_response.clicked() {
-                                new_selected = Some(cell.index);
+                                click_action = Some((cell.index, ctrl_held, shift_held));
                             }
                             if canvas_response.double_clicked() {
                                 open_index = Some(cell.index);
@@ -422,10 +431,24 @@ impl CyberFile {
                             }
                         }
                     }
+
+                    // Hover tooltip
+                    if let Some(hover_pos) = canvas_response.hover_pos() {
+                        let dx = hover_pos.x - cx;
+                        let dy = hover_pos.y - cy;
+                        if (dx * dx + dy * dy).sqrt() < hex_radius - 4.0 {
+                            let tip = if cell.is_dir {
+                                format!("{}\nDIR │ {}", cell.name, cell.ext)
+                            } else {
+                                format!("{}\n{} │ {}", cell.name, cell.size, cell.ext)
+                            };
+                            canvas_response.clone().on_hover_text_at_pointer(tip);
+                        }
+                    }
                 }
 
                 // If clicked but didn't hit any hex, deselect
-                if canvas_response.clicked() && new_selected == current_selected {
+                if canvas_response.clicked() && click_action.is_none() {
                     let mut hit_any = false;
                     if let Some(click_pos) = canvas_response.interact_pointer_pos() {
                         for (i, _) in cells.iter().enumerate() {
@@ -444,7 +467,7 @@ impl CyberFile {
                         }
                     }
                     if !hit_any {
-                        new_selected = None;
+                        click_action = Some((usize::MAX, false, false));
                     }
                 }
 
@@ -454,7 +477,29 @@ impl CyberFile {
             });
 
         // Apply
-        self.selected = new_selected;
+        if let Some((idx, ctrl, shift)) = click_action {
+            if idx == usize::MAX {
+                self.selected = None;
+                self.multi_selected.clear();
+            } else if ctrl {
+                if self.multi_selected.contains(&idx) {
+                    self.multi_selected.remove(&idx);
+                } else {
+                    self.multi_selected.insert(idx);
+                }
+            } else if shift {
+                let anchor = self.selected.unwrap_or(0);
+                let start = anchor.min(idx);
+                let end = anchor.max(idx);
+                self.multi_selected.clear();
+                for i in start..=end {
+                    self.multi_selected.insert(i);
+                }
+            } else {
+                self.multi_selected.clear();
+                self.selected = Some(idx);
+            }
+        }
         if let Some(i) = open_index {
             self.open_entry(i);
         }

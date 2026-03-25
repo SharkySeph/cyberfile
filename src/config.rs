@@ -32,6 +32,38 @@ pub struct Settings {
     /// e.g. { "rs" = "code", "png" = "gimp", "md" = "code" }
     #[serde(default)]
     pub custom_openers: BTreeMap<String, String>,
+
+    // ── Window State Persistence ─────────────────────────
+    #[serde(default = "default_window_width")]
+    pub window_width: f32,
+    #[serde(default = "default_window_height")]
+    pub window_height: f32,
+    #[serde(default)]
+    pub last_directory: String,
+
+    // ── Bookmark & Tab Persistence ───────────────────────
+    #[serde(default)]
+    pub bookmarks: Vec<String>,
+    #[serde(default)]
+    pub saved_tabs: Vec<String>,
+
+    // ── Sound ────────────────────────────────────────────
+    #[serde(default)]
+    pub sound_enabled: bool,
+
+    // ── Phase D: Visual Effects ──────────────────────────
+    #[serde(default)]
+    pub neon_glow: bool,
+    #[serde(default)]
+    pub chromatic_aberration: bool,
+    #[serde(default)]
+    pub holographic_noise: bool,
+
+    // ── Phase E: Accessibility ───────────────────────────
+    #[serde(default)]
+    pub reduced_motion: bool,
+    #[serde(default)]
+    pub high_contrast: bool,
 }
 
 fn default_theme() -> String {
@@ -49,6 +81,12 @@ fn default_font_size() -> f32 {
 fn default_sidebar_width() -> f32 {
     220.0
 }
+fn default_window_width() -> f32 {
+    1280.0
+}
+fn default_window_height() -> f32 {
+    800.0
+}
 
 impl Default for Settings {
     fn default() -> Self {
@@ -64,6 +102,17 @@ impl Default for Settings {
             crt_effect: false,
             terminal_emulator: String::new(),
             custom_openers: BTreeMap::new(),
+            window_width: default_window_width(),
+            window_height: default_window_height(),
+            last_directory: String::new(),
+            bookmarks: Vec::new(),
+            saved_tabs: Vec::new(),
+            sound_enabled: false,
+            neon_glow: false,
+            chromatic_aberration: false,
+            holographic_noise: false,
+            reduced_motion: false,
+            high_contrast: false,
         }
     }
 }

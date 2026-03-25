@@ -15,3 +15,8 @@ open = "5"
 bytesize = "2"
 sysinfo = "0.32"
 image = "0.25"
+uzers = "0.12"
+zip = { version = "2", features = ["deflate"] }
+regex = "1"
+rodio = { version = "0.19", default-features = false, features = ["wav"] }
+ssh2 = "0.9"

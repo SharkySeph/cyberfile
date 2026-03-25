@@ -82,7 +82,26 @@ impl CyberFile {
                 sort_action = Some(SortColumn::Size);
             }
 
-            ui.add_space(20.0);
+            ui.add_space(12.0);
+
+            if ui
+                .selectable_label(
+                    false,
+                    RichText::new(format!(
+                        "EXT{}",
+                        sort_indicator(SortColumn::Extension, sort_col, sort_asc)
+                    ))
+                    .color(CYAN)
+                    .monospace()
+                    .size(11.0)
+                    .strong(),
+                )
+                .clicked()
+            {
+                sort_action = Some(SortColumn::Extension);
+            }
+
+            ui.add_space(12.0);
 
             if ui
                 .selectable_label(
@@ -135,11 +154,16 @@ impl CyberFile {
         ui.add_space(3.0);
 
         // ── File Listing ───────────────────────────────────────
-        // Pre-collect display data
+        // Pre-collect display data (with filter)
+        let filter_lower = self.filter_text.to_lowercase();
         let rows: Vec<DisplayRow> = self
             .entries
             .iter()
             .enumerate()
+            .filter(|(_, e)| {
+                self.filter_text.is_empty()
+                    || e.name.to_lowercase().contains(&filter_lower)
+            })
             .map(|(i, e)| DisplayRow {
                 index: i,
                 name: e.name.clone(),
@@ -153,10 +177,13 @@ impl CyberFile {
             .collect();
 
         let current_selected = self.selected;
-        let mut new_selected = self.selected;
+        let current_multi = self.multi_selected.clone();
+        let ctrl_held = ui.input(|i| i.modifiers.ctrl);
+        let shift_held = ui.input(|i| i.modifiers.shift);
         let mut open_index: Option<usize> = None;
         let mut context_index: Option<usize> = None;
         let mut blank_space_menu = false;
+        let mut click_action: Option<(usize, bool, bool)> = None;
 
         egui::ScrollArea::vertical()
             .auto_shrink(false)
@@ -181,7 +208,8 @@ impl CyberFile {
                 }
 
                 for row in &rows {
-                    let is_sel = current_selected == Some(row.index);
+                    let is_sel = current_selected == Some(row.index)
+                        || current_multi.contains(&row.index);
 
                     let frame_fill = if is_sel {
                         Color32::from_rgba_premultiplied(0xFF, 0x20, 0x79, 0x18)
@@ -260,8 +288,12 @@ impl CyberFile {
 
                     // Interaction: click entire row area
                     let resp = resp.response.interact(egui::Sense::click());
+                    resp.clone().on_hover_text(format!(
+                        "{}\n{} │ {} │ {}",
+                        row.name, row.size, row.modified, row.permissions
+                    ));
                     if resp.clicked() {
-                        new_selected = Some(row.index);
+                        click_action = Some((row.index, ctrl_held, shift_held));
                     }
                     if resp.double_clicked() {
                         open_index = Some(row.index);
@@ -276,7 +308,7 @@ impl CyberFile {
                 let remaining = ui.available_rect_before_wrap();
                 let blank_resp = ui.allocate_rect(remaining, egui::Sense::click());
                 if blank_resp.clicked() {
-                    new_selected = None;
+                    click_action = Some((usize::MAX, false, false)); // sentinel for deselect
                 }
                 if blank_resp.secondary_clicked() {
                     blank_space_menu = true;
@@ -284,7 +316,30 @@ impl CyberFile {
             });
 
         // ── Apply Actions ─────────────────────────────────────
-        self.selected = new_selected;
+        if let Some((idx, ctrl, shift)) = click_action {
+            if idx == usize::MAX {
+                // Blank click — deselect all
+                self.selected = None;
+                self.multi_selected.clear();
+            } else if ctrl {
+                if self.multi_selected.contains(&idx) {
+                    self.multi_selected.remove(&idx);
+                } else {
+                    self.multi_selected.insert(idx);
+                }
+            } else if shift {
+                let anchor = self.selected.unwrap_or(0);
+                let start = anchor.min(idx);
+                let end = anchor.max(idx);
+                self.multi_selected.clear();
+                for i in start..=end {
+                    self.multi_selected.insert(i);
+                }
+            } else {
+                self.multi_selected.clear();
+                self.selected = Some(idx);
+            }
+        }
 
         if let Some(i) = open_index {
             self.open_entry(i);
