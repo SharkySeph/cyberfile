@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
 
 /// Persisted operator configuration loaded from `config.toml`.
 ///
@@ -178,21 +181,29 @@ impl Settings {
         "xterm",
     ];
 
-    /// Resolve which terminal to use: configured value, or auto-detect.
+    /// Resolve which terminal to show in the UI: configured value, or auto-detect.
     pub fn resolved_terminal(&self) -> Option<String> {
-        if !self.terminal_emulator.is_empty() {
-            return Some(self.terminal_emulator.clone());
+        let configured = self.terminal_emulator.trim();
+        if !configured.is_empty() {
+            return resolve_executable(configured).map(|_| configured.to_string());
         }
         for term in Self::KNOWN_TERMINALS {
-            let ok = std::process::Command::new("which")
-                .arg(term)
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .map(|s| s.success())
-                .unwrap_or(false);
-            if ok {
+            if resolve_executable(term).is_some() {
                 return Some((*term).to_string());
+            }
+        }
+        None
+    }
+
+    /// Resolve which terminal executable path to launch.
+    pub fn resolved_terminal_path(&self) -> Option<String> {
+        let configured = self.terminal_emulator.trim();
+        if !configured.is_empty() {
+            return resolve_executable(configured);
+        }
+        for term in Self::KNOWN_TERMINALS {
+            if let Some(path) = resolve_executable(term) {
+                return Some(path);
             }
         }
         None
@@ -202,4 +213,73 @@ impl Settings {
     pub fn opener_for_ext(&self, ext: &str) -> Option<&String> {
         self.custom_openers.get(&ext.to_lowercase())
     }
+}
+
+fn resolve_executable(command: &str) -> Option<String> {
+    let command = command.trim();
+    if command.is_empty() {
+        return None;
+    }
+
+    let direct_path = expand_user_path(command);
+    if direct_path.components().count() > 1 || command.starts_with('.') || command.starts_with('~') {
+        return is_executable(&direct_path).then(|| direct_path.to_string_lossy().to_string());
+    }
+
+    if let Ok(output) = Command::new("which")
+        .arg(command)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+    {
+        if output.status.success() {
+            let resolved = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !resolved.is_empty() && is_executable(&PathBuf::from(&resolved)) {
+                return Some(resolved);
+            }
+        }
+    }
+
+    for dir in fallback_bin_dirs() {
+        let candidate = dir.join(command);
+        if is_executable(&candidate) {
+            return Some(candidate.to_string_lossy().to_string());
+        }
+    }
+
+    None
+}
+
+fn expand_user_path(path: &str) -> PathBuf {
+    if path == "~" {
+        return dirs::home_dir().unwrap_or_else(|| PathBuf::from(path));
+    }
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Some(home) = dirs::home_dir() {
+            return home.join(rest);
+        }
+    }
+    PathBuf::from(path)
+}
+
+fn fallback_bin_dirs() -> Vec<PathBuf> {
+    let mut dirs_list = vec![
+        PathBuf::from("/usr/local/bin"),
+        PathBuf::from("/usr/bin"),
+        PathBuf::from("/bin"),
+    ];
+
+    if let Some(home) = dirs::home_dir() {
+        dirs_list.insert(0, home.join(".local/bin"));
+        dirs_list.insert(1, home.join(".cargo/bin"));
+        dirs_list.insert(2, home.join(".local/kitty.app/bin"));
+    }
+
+    dirs_list
+}
+
+fn is_executable(path: &PathBuf) -> bool {
+    fs::metadata(path)
+        .map(|metadata| metadata.is_file() && (metadata.permissions().mode() & 0o111) != 0)
+        .unwrap_or(false)
 }

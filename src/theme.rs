@@ -312,7 +312,9 @@ pub const BORDER_ACTIVE: Color32 = Color32::from_rgb(0x00, 0x60, 0x66);
 /// Apply a `CyberTheme` palette to the active egui context.
 ///
 /// This is the single translation layer between theme palette semantics and egui visuals.
-pub fn apply_cyber_theme(ctx: &egui::Context, theme: CyberTheme) {
+pub fn apply_cyber_theme(ctx: &egui::Context, theme: CyberTheme, ui_scale: f32) {
+    ctx.set_zoom_factor(ui_scale.clamp(0.75, 1.75));
+
     let mut visuals = Visuals::dark();
 
     visuals.panel_fill = theme.surface();

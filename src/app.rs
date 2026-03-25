@@ -170,6 +170,7 @@ pub struct CyberFile {
 
     // ── Settings Panel ───────────────────────────────────
     pub(crate) settings_panel_open: bool,
+    pub(crate) ui_scale_preview: f32,
 
     // ── Settings ─────────────────────────────────────────
     pub(crate) settings: Settings,
@@ -352,6 +353,7 @@ impl CyberFile {
         let disks = sysinfo::Disks::new_with_refreshed_list();
 
         let sound_enabled = settings.sound_enabled;
+        let ui_scale_preview = settings.font_size;
 
         Self {
             current_path: start_path,
@@ -397,6 +399,7 @@ impl CyberFile {
             cpu_history: Vec::new(),
             mem_history: Vec::new(),
             settings_panel_open: false,
+            ui_scale_preview,
             settings,
             view_mode: ViewMode::List,
             tabs: saved_tabs,
@@ -881,15 +884,17 @@ impl CyberFile {
     /// Launch the configured (or auto-detected) terminal in a directory.
     pub(crate) fn open_terminal_here(&mut self) {
         let dir = self.current_path.clone();
-        if let Some(term) = self.settings.resolved_terminal() {
-            let result = std::process::Command::new(&term)
+        if let Some(term_path) = self.settings.resolved_terminal_path() {
+            let result = std::process::Command::new(&term_path)
                 .current_dir(&dir)
                 .spawn();
             if let Err(e) = result {
-                self.set_error(format!("Jack-in failed [{}]: {}", term, e));
+                self.set_error(format!("Jack-in failed [{}]: {}", term_path, e));
             }
         } else {
-            self.set_error("No terminal subsystem detected — configure in SYSTEM CONFIGURATION".into());
+            self.set_error(
+                "No terminal subsystem detected — use an absolute executable path in SYSTEM CONFIGURATION".into(),
+            );
         }
     }
 
@@ -1655,6 +1660,9 @@ impl CyberFile {
             }
             if input.key_pressed(egui::Key::F1) {
                 self.settings_panel_open = !self.settings_panel_open;
+                if self.settings_panel_open {
+                    self.ui_scale_preview = self.settings.font_size;
+                }
             }
             if input.key_pressed(egui::Key::F3) {
                 self.resource_monitor_visible = !self.resource_monitor_visible;
@@ -1805,7 +1813,7 @@ impl eframe::App for CyberFile {
 
         // Apply theme
         if !self.theme_applied {
-            theme::apply_cyber_theme(ctx, self.current_theme);
+            theme::apply_cyber_theme(ctx, self.current_theme, self.settings.font_size / 14.0);
             self.theme_applied = true;
         }
 

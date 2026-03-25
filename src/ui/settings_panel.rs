@@ -226,6 +226,55 @@ impl CyberFile {
                     Self::section_hex_header(ui, t, "INTERFACE", t.primary());
                     ui.add_space(4.0);
 
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new("UI SCALE:")
+                                .color(t.text_dim())
+                                .monospace()
+                                .size(10.0),
+                        );
+                        let resp = ui.add_sized(
+                            [150.0, 18.0],
+                            egui::Slider::new(&mut self.ui_scale_preview, 11.0..=22.0)
+                                .step_by(0.5)
+                                .show_value(false),
+                        );
+                        if (resp.drag_stopped() || (resp.changed() && !resp.dragged()))
+                            && (self.settings.font_size - self.ui_scale_preview).abs() > f32::EPSILON
+                        {
+                            self.settings.font_size = self.ui_scale_preview;
+                            self.theme_applied = false;
+                        }
+                        ui.label(
+                            RichText::new(format!("{:.1} pt", self.ui_scale_preview))
+                                .color(t.primary())
+                                .monospace()
+                                .size(10.0),
+                        );
+                        if ui
+                            .button(
+                                RichText::new("RESET")
+                                    .color(t.text_dim())
+                                    .monospace()
+                                    .size(9.0),
+                            )
+                            .clicked()
+                        {
+                            self.ui_scale_preview = 14.0;
+                            self.settings.font_size = 14.0;
+                            self.theme_applied = false;
+                        }
+                    });
+
+                    ui.label(
+                        RichText::new("  Adjusts overall HUD scale, text, and spacing")
+                            .color(t.text_dim())
+                            .monospace()
+                            .size(9.0),
+                    );
+
+                    ui.add_space(6.0);
+
                     let interface_toggles = self.interface_toggle_specs(t);
 
                     for (i, spec) in interface_toggles.iter().enumerate() {
