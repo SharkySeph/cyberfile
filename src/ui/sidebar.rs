@@ -238,9 +238,9 @@ impl CyberFile {
                 section_header(ui, "NET RUNNER", t.primary());
                 ui.add_space(4.0);
 
-                if let Some(ref conn) = self.sftp_connection {
+                if self.sftp_connection.is_some() {
                     ui.label(
-                        RichText::new(format!("  ◉ {}", conn.display_name()))
+                        RichText::new(format!("  ◉ {}", self.sftp_display_name))
                             .color(t.success())
                             .monospace()
                             .size(11.0),

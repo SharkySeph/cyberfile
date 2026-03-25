@@ -2,10 +2,14 @@ use eframe::egui::{self, Color32, RichText};
 use rodio::Source;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::time::Instant;
+use std::sync::{
+    mpsc::{self, Receiver, Sender},
+    Arc, Mutex,
+};
+use std::time::{Duration, Instant};
 
 use crate::config::Settings;
-use crate::filesystem::{self, FileEntry, SortColumn};
+use crate::filesystem::{self, EntryKind, FileEntry, SortColumn};
 use crate::integrations::media::MediaState;
 use crate::theme::{self, CyberTheme};
 
@@ -41,7 +45,42 @@ pub(crate) enum UndoAction {
     Delete { original_path: PathBuf, trash_name: String },
     Copy { copied_to: Vec<PathBuf> },
     Move { sources: Vec<PathBuf>, destinations: Vec<PathBuf> },
-    Create { path: PathBuf },
+    Create { path: PathBuf, kind: EntryKind },
+}
+
+type SharedSftpConnection = Arc<Mutex<crate::integrations::sftp::SftpConnection>>;
+
+enum BackgroundTaskResult {
+    TerminalFinished {
+        lines: Vec<String>,
+        duration: Duration,
+    },
+    TerminalSpawnFailed { message: String },
+    ContentSearchFinished {
+        request_id: u64,
+        query: String,
+        results: Vec<(String, u32, String)>,
+    },
+    SftpConnected {
+        request_id: u64,
+        connection: SharedSftpConnection,
+        display_name: String,
+        entries: Vec<crate::integrations::sftp::RemoteEntry>,
+        clear_password: bool,
+    },
+    SftpListed {
+        request_id: u64,
+        path: String,
+        entries: Vec<crate::integrations::sftp::RemoteEntry>,
+    },
+    SftpDownloaded {
+        request_id: u64,
+        file_name: String,
+    },
+    SftpFailed {
+        request_id: u64,
+        message: String,
+    },
 }
 
 // ── Sound Types ───────────────────────────────────────────
@@ -195,6 +234,8 @@ pub struct CyberFile {
     pub(crate) content_search_dialog: bool,
     pub(crate) content_search_query: String,
     pub(crate) content_search_results: Vec<(String, u32, String)>,
+    pub(crate) content_search_active_query: String,
+    pub(crate) content_search_request_id: u64,
 
     // ── Batch Rename Dialog ──────────────────────────────
     pub(crate) batch_rename_dialog: bool,
@@ -226,6 +267,9 @@ pub struct CyberFile {
     pub(crate) terminal_panel_visible: bool,
     pub(crate) terminal_input: String,
     pub(crate) terminal_output: Vec<String>,
+    pub(crate) terminal_task_running: bool,
+    pub(crate) terminal_running_command: Option<String>,
+    pub(crate) terminal_started_at: Option<Instant>,
 
     // ── Sound ────────────────────────────────────────────
     pub(crate) sound_enabled: bool,
@@ -245,15 +289,25 @@ pub struct CyberFile {
     pub(crate) sftp_port: String,
     pub(crate) sftp_user: String,
     pub(crate) sftp_password: String,
-    pub(crate) sftp_connection: Option<crate::integrations::sftp::SftpConnection>,
+    pub(crate) sftp_connection: Option<SharedSftpConnection>,
+    pub(crate) sftp_display_name: String,
     pub(crate) sftp_remote_path: String,
     pub(crate) sftp_remote_entries: Vec<crate::integrations::sftp::RemoteEntry>,
     pub(crate) sftp_error: Option<String>,
+    pub(crate) sftp_busy: bool,
+    pub(crate) sftp_request_id: u64,
+    pub(crate) sftp_operation_label: String,
+
+    // ── Background Tasks ─────────────────────────────────
+    pub(crate) content_search_in_progress: bool,
+    background_tx: Sender<BackgroundTaskResult>,
+    background_rx: Receiver<BackgroundTaskResult>,
 }
 
 impl CyberFile {
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         let settings = Settings::load();
+        let (background_tx, background_rx) = mpsc::channel();
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
         let theme = CyberTheme::from_id(&settings.theme);
 
@@ -375,6 +429,8 @@ impl CyberFile {
             content_search_dialog: false,
             content_search_query: String::new(),
             content_search_results: Vec::new(),
+            content_search_active_query: String::new(),
+            content_search_request_id: 0,
             batch_rename_dialog: false,
             batch_rename_find: String::new(),
             batch_rename_replace: String::new(),
@@ -394,6 +450,9 @@ impl CyberFile {
             terminal_panel_visible: false,
             terminal_input: String::new(),
             terminal_output: Vec::new(),
+            terminal_task_running: false,
+            terminal_running_command: None,
+            terminal_started_at: None,
             sound_enabled,
             neon_glow: false,
             chromatic_aberration: false,
@@ -406,10 +465,299 @@ impl CyberFile {
             sftp_user: std::env::var("USER").unwrap_or_default(),
             sftp_password: String::new(),
             sftp_connection: None,
+            sftp_display_name: String::new(),
             sftp_remote_path: "/".to_string(),
             sftp_remote_entries: Vec::new(),
             sftp_error: None,
+            sftp_busy: false,
+            sftp_request_id: 0,
+            sftp_operation_label: String::new(),
+            content_search_in_progress: false,
+            background_tx,
+            background_rx,
         }
+    }
+
+    fn trim_terminal_output(&mut self) {
+        if self.terminal_output.len() > 1000 {
+            let drain = self.terminal_output.len() - 1000;
+            self.terminal_output.drain(..drain);
+        }
+    }
+
+    fn poll_background_tasks(&mut self) {
+        while let Ok(result) = self.background_rx.try_recv() {
+            match result {
+                BackgroundTaskResult::TerminalFinished { lines, duration } => {
+                    self.terminal_task_running = false;
+                    self.terminal_started_at = None;
+                    let command = self
+                        .terminal_running_command
+                        .take()
+                        .unwrap_or_else(|| "command".to_string());
+                    self.terminal_output.extend(lines);
+                    self.terminal_output.push(format!(
+                        "[SYS] {} completed in {} ms",
+                        command,
+                        duration.as_millis()
+                    ));
+                    self.trim_terminal_output();
+                    self.load_current_directory();
+                }
+                BackgroundTaskResult::TerminalSpawnFailed { message } => {
+                    self.terminal_task_running = false;
+                    self.terminal_started_at = None;
+                    self.terminal_running_command = None;
+                    self.terminal_output.push(format!("[ERR] {}", message));
+                    self.trim_terminal_output();
+                }
+                BackgroundTaskResult::ContentSearchFinished {
+                    request_id,
+                    query,
+                    results,
+                } => {
+                    if request_id != self.content_search_request_id {
+                        continue;
+                    }
+                    self.content_search_in_progress = false;
+                    self.content_search_results = results;
+                    self.content_search_active_query = query.clone();
+                    self.status_message = format!(
+                        "Deep scan: {} matches for \"{}\"",
+                        self.content_search_results.len(),
+                        query
+                    );
+                }
+                BackgroundTaskResult::SftpConnected {
+                    request_id,
+                    connection,
+                    display_name,
+                    entries,
+                    clear_password,
+                } => {
+                    if request_id != self.sftp_request_id {
+                        continue;
+                    }
+                    self.sftp_busy = false;
+                    self.sftp_connection = Some(connection);
+                    self.sftp_display_name = display_name;
+                    self.sftp_remote_entries = entries;
+                    self.sftp_error = None;
+                    if clear_password {
+                        self.sftp_password.clear();
+                    }
+                    self.status_message = format!("Uplink established: {}", self.sftp_display_name);
+                    self.sftp_operation_label.clear();
+                    self.trigger_glitch();
+                }
+                BackgroundTaskResult::SftpListed {
+                    request_id,
+                    path,
+                    entries,
+                } => {
+                    if request_id != self.sftp_request_id {
+                        continue;
+                    }
+                    self.sftp_busy = false;
+                    self.sftp_remote_path = path;
+                    self.sftp_remote_entries = entries;
+                    self.sftp_error = None;
+                    self.sftp_operation_label.clear();
+                }
+                BackgroundTaskResult::SftpDownloaded {
+                    request_id,
+                    file_name,
+                } => {
+                    if request_id != self.sftp_request_id {
+                        continue;
+                    }
+                    self.sftp_busy = false;
+                    self.sftp_error = None;
+                    self.status_message = format!("Downloaded: {}", file_name);
+                    self.sftp_operation_label.clear();
+                }
+                BackgroundTaskResult::SftpFailed { request_id, message } => {
+                    if request_id != self.sftp_request_id {
+                        continue;
+                    }
+                    self.sftp_busy = false;
+                    self.sftp_operation_label.clear();
+                    self.status_message = format!("Remote operation failed: {}", message);
+                    self.sftp_error = Some(message);
+                }
+            }
+        }
+    }
+
+    fn start_content_search(&mut self) {
+        let query = self.content_search_query.trim().to_string();
+        if query.is_empty() || self.content_search_in_progress {
+            return;
+        }
+
+        let tx = self.background_tx.clone();
+        let dir = self.current_path.clone();
+        self.content_search_request_id += 1;
+        let request_id = self.content_search_request_id;
+        self.content_search_in_progress = true;
+        self.content_search_active_query = query.clone();
+        self.status_message = format!("Deep scan running for \"{}\"...", query);
+
+        std::thread::spawn(move || {
+            let results = crate::filesystem::search_content(&dir, &query, 200);
+            let _ = tx.send(BackgroundTaskResult::ContentSearchFinished {
+                request_id,
+                query,
+                results,
+            });
+        });
+    }
+
+    fn next_sftp_request_id(&mut self) -> u64 {
+        self.sftp_request_id += 1;
+        self.sftp_request_id
+    }
+
+    fn start_sftp_connect(&mut self, use_password: bool) {
+        if self.sftp_busy {
+            return;
+        }
+
+        let host = self.sftp_host.trim().to_string();
+        let user = self.sftp_user.trim().to_string();
+        if host.is_empty() || user.is_empty() {
+            self.sftp_error = Some("Host and user are required".to_string());
+            return;
+        }
+
+        let port = self.sftp_port.parse().unwrap_or(22);
+        let remote_path = self.sftp_remote_path.clone();
+        let password = self.sftp_password.clone();
+        let tx = self.background_tx.clone();
+        let request_id = self.next_sftp_request_id();
+        self.sftp_busy = true;
+        self.sftp_error = None;
+        self.sftp_operation_label = format!("Connecting to {}@{}", user, host);
+        self.status_message = format!("Connecting to {}@{}...", user, host);
+
+        std::thread::spawn(move || {
+            let connect_result = if use_password {
+                crate::integrations::sftp::SftpConnection::connect_with_password(
+                    &host,
+                    port,
+                    &user,
+                    &password,
+                )
+            } else {
+                crate::integrations::sftp::SftpConnection::connect(&host, port, &user)
+            };
+
+            match connect_result {
+                Ok(conn) => {
+                    let display_name = conn.display_name();
+                    match conn.list_directory(&remote_path) {
+                        Ok(entries) => {
+                            let _ = tx.send(BackgroundTaskResult::SftpConnected {
+                                request_id,
+                                connection: Arc::new(Mutex::new(conn)),
+                                display_name,
+                                entries,
+                                clear_password: use_password,
+                            });
+                        }
+                        Err(message) => {
+                            let _ = tx.send(BackgroundTaskResult::SftpFailed {
+                                request_id,
+                                message,
+                            });
+                        }
+                    }
+                }
+                Err(message) => {
+                    let _ = tx.send(BackgroundTaskResult::SftpFailed {
+                        request_id,
+                        message,
+                    });
+                }
+            }
+        });
+    }
+
+    fn start_sftp_list_directory(&mut self, path: String) {
+        if self.sftp_busy {
+            return;
+        }
+        let Some(conn) = self.sftp_connection.as_ref().map(Arc::clone) else {
+            return;
+        };
+
+        let tx = self.background_tx.clone();
+        let request_id = self.next_sftp_request_id();
+        self.sftp_busy = true;
+        self.sftp_error = None;
+        self.sftp_remote_path = path.clone();
+        self.sftp_operation_label = format!("Listing {}", path);
+
+        std::thread::spawn(move || {
+            let result = match conn.lock() {
+                Ok(conn) => conn.list_directory(&path),
+                Err(_) => Err("SFTP connection lock failed".to_string()),
+            };
+
+            match result {
+                Ok(entries) => {
+                    let _ = tx.send(BackgroundTaskResult::SftpListed {
+                        request_id,
+                        path,
+                        entries,
+                    });
+                }
+                Err(message) => {
+                    let _ = tx.send(BackgroundTaskResult::SftpFailed {
+                        request_id,
+                        message,
+                    });
+                }
+            }
+        });
+    }
+
+    fn start_sftp_download(&mut self, remote: String, local_path: PathBuf, file_name: String) {
+        if self.sftp_busy {
+            return;
+        }
+        let Some(conn) = self.sftp_connection.as_ref().map(Arc::clone) else {
+            return;
+        };
+
+        let tx = self.background_tx.clone();
+        let request_id = self.next_sftp_request_id();
+        self.sftp_busy = true;
+        self.sftp_error = None;
+        self.sftp_operation_label = format!("Downloading {}", file_name);
+        self.status_message = format!("Downloading {}...", file_name);
+
+        std::thread::spawn(move || {
+            let result = match conn.lock() {
+                Ok(conn) => conn.download_file(&remote, &local_path),
+                Err(_) => Err("SFTP connection lock failed".to_string()),
+            };
+
+            match result {
+                Ok(()) => {
+                    let _ = tx.send(BackgroundTaskResult::SftpDownloaded {
+                        request_id,
+                        file_name,
+                    });
+                }
+                Err(message) => {
+                    let _ = tx.send(BackgroundTaskResult::SftpFailed {
+                        request_id,
+                        message,
+                    });
+                }
+            }
+        });
     }
 
     // ── Navigation ────────────────────────────────────────────
@@ -556,15 +904,17 @@ impl CyberFile {
         for &idx in indices.iter().rev() {
             if let Some(entry) = self.entries.get(idx) {
                 let original_path = entry.path.clone();
-                let trash_name = entry.name.clone();
-                if let Err(e) = filesystem::delete_to_trash(&entry.path) {
-                    errors.push(format!("{}: {}", entry.name, e));
-                } else {
-                    self.undo_stack.push(UndoAction::Delete {
-                        original_path,
-                        trash_name,
-                    });
-                    self.redo_stack.clear();
+                match filesystem::delete_to_trash(&entry.path) {
+                    Ok(trash_name) => {
+                        self.undo_stack.push(UndoAction::Delete {
+                            original_path,
+                            trash_name,
+                        });
+                        self.redo_stack.clear();
+                    }
+                    Err(e) => {
+                        errors.push(format!("{}: {}", entry.name, e));
+                    }
                 }
             }
         }
@@ -708,7 +1058,10 @@ impl CyberFile {
         match filesystem::create_directory(&self.current_path, &name) {
             Ok(path) => {
                 self.status_message = format!("Sector \"{}\" initialized", name);
-                self.undo_stack.push(UndoAction::Create { path });
+                self.undo_stack.push(UndoAction::Create {
+                    path,
+                    kind: EntryKind::Directory,
+                });
                 self.redo_stack.clear();
                 self.load_current_directory();
                 self.play_sound(SoundType::Navigate);
@@ -731,7 +1084,10 @@ impl CyberFile {
         match filesystem::create_file(&self.current_path, &name) {
             Ok(path) => {
                 self.status_message = format!("Construct \"{}\" initialized", name);
-                self.undo_stack.push(UndoAction::Create { path });
+                self.undo_stack.push(UndoAction::Create {
+                    path,
+                    kind: EntryKind::File,
+                });
                 self.redo_stack.clear();
                 self.load_current_directory();
                 self.play_sound(SoundType::Navigate);
@@ -769,15 +1125,17 @@ impl CyberFile {
         for &idx in indices.iter().rev() {
             if let Some(entry) = self.entries.get(idx) {
                 let original_path = entry.path.clone();
-                let trash_name = entry.name.clone();
-                if let Err(e) = filesystem::delete_to_trash(&entry.path) {
-                    errors.push(format!("{}: {}", entry.name, e));
-                } else {
-                    self.undo_stack.push(UndoAction::Delete {
-                        original_path,
-                        trash_name,
-                    });
-                    self.redo_stack.clear();
+                match filesystem::delete_to_trash(&entry.path) {
+                    Ok(trash_name) => {
+                        self.undo_stack.push(UndoAction::Delete {
+                            original_path,
+                            trash_name,
+                        });
+                        self.redo_stack.clear();
+                    }
+                    Err(e) => {
+                        errors.push(format!("{}: {}", entry.name, e));
+                    }
                 }
             }
         }
@@ -1018,8 +1376,8 @@ impl CyberFile {
                         self.set_error("Undo move: some files could not be moved back".into());
                     }
                 }
-                UndoAction::Create { path } => {
-                    let result = if path.is_dir() {
+                UndoAction::Create { path, kind } => {
+                    let result = if kind == EntryKind::Directory {
                         std::fs::remove_dir_all(&path)
                     } else {
                         std::fs::remove_file(&path)
@@ -1050,12 +1408,19 @@ impl CyberFile {
                         self.undo_stack.push(action);
                     }
                 }
-                UndoAction::Delete { original_path, trash_name: _ } => {
-                    if let Err(e) = filesystem::delete_to_trash(&original_path) {
-                        self.set_error(format!("Redo delete failed: {}", e));
-                    } else {
-                        self.undo_stack.push(action);
-                        self.status_message = "Redo: re-quarantined".into();
+                UndoAction::Delete {
+                    original_path,
+                    trash_name: _,
+                } => {
+                    match filesystem::delete_to_trash(&original_path) {
+                        Ok(trash_name) => {
+                            self.undo_stack.push(UndoAction::Delete {
+                                original_path,
+                                trash_name,
+                            });
+                            self.status_message = "Redo: re-quarantined".into();
+                        }
+                        Err(e) => self.set_error(format!("Redo delete failed: {}", e)),
                     }
                 }
                 UndoAction::Copy { copied_to: _copied_to } => {
@@ -1077,14 +1442,8 @@ impl CyberFile {
                         self.set_error("Redo move failed".into());
                     }
                 }
-                UndoAction::Create { path } => {
-                    let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-                    let parent = path.parent().unwrap_or(&self.current_path);
-                    let result = if path.to_string_lossy().ends_with('/') || name.is_empty() {
-                        filesystem::create_directory(parent, &name).map(|_| ())
-                    } else {
-                        filesystem::create_file(parent, &name).map(|_| ())
-                    };
+                UndoAction::Create { path, kind } => {
+                    let result = filesystem::recreate_entry(&path, kind);
                     match result {
                         Ok(()) => {
                             self.status_message = "Redo: re-created".into();
@@ -1173,41 +1532,53 @@ impl CyberFile {
 
     pub(crate) fn run_terminal_command(&mut self) {
         let cmd = self.terminal_input.trim().to_string();
-        if cmd.is_empty() {
+        if cmd.is_empty() || self.terminal_task_running {
             return;
         }
         self.terminal_output.push(format!("$ {}", cmd));
+        self.terminal_task_running = true;
+        self.terminal_running_command = Some(cmd.clone());
+        self.terminal_started_at = Some(Instant::now());
+        self.trim_terminal_output();
 
-        let output = std::process::Command::new("sh")
-            .arg("-c")
-            .arg(&cmd)
-            .current_dir(&self.current_path)
-            .output();
+        let tx = self.background_tx.clone();
+        let current_dir = self.current_path.clone();
+        std::thread::spawn(move || {
+            let started = Instant::now();
+            let result = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(&cmd)
+                .current_dir(current_dir)
+                .output();
 
-        match output {
-            Ok(out) => {
-                let stdout = String::from_utf8_lossy(&out.stdout);
-                let stderr = String::from_utf8_lossy(&out.stderr);
-                for line in stdout.lines().take(200) {
-                    self.terminal_output.push(line.to_string());
+            match result {
+                Ok(out) => {
+                    let stdout = String::from_utf8_lossy(&out.stdout);
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    let mut lines = Vec::new();
+                    for line in stdout.lines().take(200) {
+                        lines.push(line.to_string());
+                    }
+                    for line in stderr.lines().take(50) {
+                        lines.push(format!("[ERR] {}", line));
+                    }
+                    if !out.status.success() && stderr.trim().is_empty() {
+                        lines.push(format!("[ERR] command exited with status {}", out.status));
+                    }
+                    let _ = tx.send(BackgroundTaskResult::TerminalFinished {
+                        lines,
+                        duration: started.elapsed(),
+                    });
                 }
-                for line in stderr.lines().take(50) {
-                    self.terminal_output.push(format!("[ERR] {}", line));
+                Err(e) => {
+                    let _ = tx.send(BackgroundTaskResult::TerminalSpawnFailed {
+                        message: e.to_string(),
+                    });
                 }
             }
-            Err(e) => {
-                self.terminal_output.push(format!("[ERR] {}", e));
-            }
-        }
-
-        // Keep output buffer bounded
-        if self.terminal_output.len() > 1000 {
-            let drain = self.terminal_output.len() - 1000;
-            self.terminal_output.drain(..drain);
-        }
+        });
 
         self.terminal_input.clear();
-        self.load_current_directory(); // Refresh in case command modified files
     }
 
     pub(crate) fn trigger_glitch(&mut self) {
@@ -1456,6 +1827,12 @@ impl eframe::App for CyberFile {
 
         // Keyboard shortcuts
         self.handle_keyboard(ctx);
+
+        // Background task completions
+        self.poll_background_tasks();
+        if self.terminal_task_running || self.content_search_in_progress || self.sftp_busy {
+            ctx.request_repaint_after(Duration::from_millis(100));
+        }
 
         // Render UI
         self.render_command_bar(ctx);
@@ -2542,7 +2919,14 @@ impl CyberFile {
                         run_search = true;
                     }
                     if ui
-                        .button(RichText::new("SCAN").color(t.success()).monospace())
+                        .add_enabled(
+                            !self.content_search_in_progress,
+                            egui::Button::new(
+                                RichText::new(if self.content_search_in_progress { "BUSY" } else { "SCAN" })
+                                    .color(t.success())
+                                    .monospace(),
+                            ),
+                        )
                         .clicked()
                     {
                         run_search = true;
@@ -2550,6 +2934,19 @@ impl CyberFile {
                 });
 
                 ui.add_space(4.0);
+
+                if self.content_search_in_progress {
+                    ui.label(
+                        RichText::new(format!(
+                            "│ SCAN IN PROGRESS: {}",
+                            self.content_search_active_query
+                        ))
+                            .color(t.accent())
+                            .monospace()
+                            .size(10.0),
+                    );
+                    ui.add_space(4.0);
+                }
 
                 if !self.content_search_results.is_empty() {
                     ui.label(
@@ -2622,16 +3019,7 @@ impl CyberFile {
             });
 
             if run_search && !self.content_search_query.is_empty() {
-                self.content_search_results = crate::filesystem::search_content(
-                    &self.current_path,
-                    &self.content_search_query,
-                    200,
-                );
-                self.status_message = format!(
-                    "Deep scan: {} matches for \"{}\"",
-                    self.content_search_results.len(),
-                    self.content_search_query
-                );
+                self.start_content_search();
             }
 
             if let Some(file_path) = nav_to_file {
@@ -3241,61 +3629,53 @@ impl CyberFile {
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     if ui
-                        .button(RichText::new("⟐ JACK IN (KEY AUTH)").color(t.primary()).monospace())
+                        .add_enabled(
+                            !self.sftp_busy,
+                            egui::Button::new(
+                                RichText::new("⟐ JACK IN (KEY AUTH)")
+                                    .color(t.primary())
+                                    .monospace(),
+                            ),
+                        )
                         .clicked()
                     {
-                        let port: u16 = self.sftp_port.parse().unwrap_or(22);
-                        match crate::integrations::sftp::SftpConnection::connect(
-                            &self.sftp_host,
-                            port,
-                            &self.sftp_user,
-                        ) {
-                            Ok(conn) => {
-                                match conn.list_directory(&self.sftp_remote_path) {
-                                    Ok(entries) => self.sftp_remote_entries = entries,
-                                    Err(e) => self.sftp_error = Some(e),
-                                }
-                                self.sftp_connection = Some(conn);
-                                self.sftp_error = None;
-                                self.trigger_glitch();
-                            }
-                            Err(e) => self.sftp_error = Some(e),
-                        }
+                        self.start_sftp_connect(false);
                     }
                     if ui
-                        .button(RichText::new("⟐ JACK IN (PASSWORD)").color(t.accent()).monospace())
+                        .add_enabled(
+                            !self.sftp_busy,
+                            egui::Button::new(
+                                RichText::new("⟐ JACK IN (PASSWORD)")
+                                    .color(t.accent())
+                                    .monospace(),
+                            ),
+                        )
                         .clicked()
                     {
-                        let port: u16 = self.sftp_port.parse().unwrap_or(22);
-                        match crate::integrations::sftp::SftpConnection::connect_with_password(
-                            &self.sftp_host,
-                            port,
-                            &self.sftp_user,
-                            &self.sftp_password,
-                        ) {
-                            Ok(conn) => {
-                                match conn.list_directory(&self.sftp_remote_path) {
-                                    Ok(entries) => self.sftp_remote_entries = entries,
-                                    Err(e) => self.sftp_error = Some(e),
-                                }
-                                self.sftp_connection = Some(conn);
-                                self.sftp_error = None;
-                                self.sftp_password.clear();
-                                self.trigger_glitch();
-                            }
-                            Err(e) => self.sftp_error = Some(e),
-                        }
+                        self.start_sftp_connect(true);
                     }
                 });
             } else {
                 // ── Connected — Remote File Browser ────────
                 ui.add_space(2.0);
-                if let Some(ref conn) = self.sftp_connection {
+                if !self.sftp_display_name.is_empty() {
                     ui.label(
-                        RichText::new(format!("◉ UPLINK: {}", conn.display_name()))
+                        RichText::new(format!("◉ UPLINK: {}", self.sftp_display_name))
                             .color(t.success())
                             .monospace()
                             .size(12.0),
+                    );
+                }
+
+                if self.sftp_busy {
+                    ui.label(
+                        RichText::new(format!(
+                            "⟳ {}",
+                            self.sftp_operation_label
+                        ))
+                            .color(t.accent())
+                            .monospace()
+                            .size(10.0),
                     );
                 }
 
@@ -3310,30 +3690,17 @@ impl CyberFile {
                     );
                     if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                         let path = self.sftp_remote_path.clone();
-                        if let Some(ref conn) = self.sftp_connection {
-                            match conn.list_directory(&path) {
-                                Ok(entries) => {
-                                    self.sftp_remote_entries = entries;
-                                    self.sftp_error = None;
-                                }
-                                Err(e) => self.sftp_error = Some(e),
-                            }
-                        }
+                        self.start_sftp_list_directory(path);
                     }
                     if ui
-                        .button(RichText::new("⟳").color(t.primary()).monospace())
+                        .add_enabled(
+                            !self.sftp_busy,
+                            egui::Button::new(RichText::new("⟳").color(t.primary()).monospace()),
+                        )
                         .clicked()
                     {
                         let path = self.sftp_remote_path.clone();
-                        if let Some(ref conn) = self.sftp_connection {
-                            match conn.list_directory(&path) {
-                                Ok(entries) => {
-                                    self.sftp_remote_entries = entries;
-                                    self.sftp_error = None;
-                                }
-                                Err(e) => self.sftp_error = Some(e),
-                            }
-                        }
+                        self.start_sftp_list_directory(path);
                     }
                 });
 
@@ -3354,15 +3721,7 @@ impl CyberFile {
                             parent
                         };
                         let path = self.sftp_remote_path.clone();
-                        if let Some(ref conn) = self.sftp_connection {
-                            match conn.list_directory(&path) {
-                                Ok(entries) => {
-                                    self.sftp_remote_entries = entries;
-                                    self.sftp_error = None;
-                                }
-                                Err(e) => self.sftp_error = Some(e),
-                            }
-                        }
+                        self.start_sftp_list_directory(path);
                     }
                 }
 
@@ -3422,15 +3781,7 @@ impl CyberFile {
                                     if entry.is_dir {
                                         self.sftp_remote_path = entry.path.clone();
                                         let path = entry.path.clone();
-                                        if let Some(ref conn) = self.sftp_connection {
-                                            match conn.list_directory(&path) {
-                                                Ok(new_entries) => {
-                                                    self.sftp_remote_entries = new_entries;
-                                                    self.sftp_error = None;
-                                                }
-                                                Err(e) => self.sftp_error = Some(e),
-                                            }
-                                        }
+                                        self.start_sftp_list_directory(path);
                                     }
                                 }
 
@@ -3442,23 +3793,11 @@ impl CyberFile {
                                             let local_path =
                                                 dl_dir.join(&entry.name);
                                             let remote = entry.path.clone();
-                                            if let Some(ref conn) = self.sftp_connection {
-                                                match conn.download_file(
-                                                    &remote,
-                                                    &local_path,
-                                                ) {
-                                                    Ok(()) => {
-                                                        self.status_message = format!(
-                                                            "Downloaded: {}",
-                                                            entry.name
-                                                        );
-                                                        self.sftp_error = None;
-                                                    }
-                                                    Err(e) => {
-                                                        self.sftp_error = Some(e);
-                                                    }
-                                                }
-                                            }
+                                            self.start_sftp_download(
+                                                remote,
+                                                local_path,
+                                                entry.name.clone(),
+                                            );
                                         }
                                     }
                                 }
@@ -3478,9 +3817,13 @@ impl CyberFile {
                     .clicked()
                 {
                     self.sftp_connection = None;
+                    self.sftp_display_name.clear();
                     self.sftp_remote_entries.clear();
                     self.sftp_remote_path = "/".to_string();
                     self.sftp_error = None;
+                    self.sftp_busy = false;
+                    self.sftp_operation_label.clear();
+                    self.sftp_request_id += 1;
                     self.status_message = "Uplink severed".to_string();
                 }
             }
@@ -4012,6 +4355,18 @@ impl CyberFile {
                     .monospace()
                     .size(9.0),
             );
+            if let Some(command) = &self.terminal_running_command {
+                let elapsed_ms = self
+                    .terminal_started_at
+                    .map(|started| started.elapsed().as_millis())
+                    .unwrap_or(0);
+                ui.label(
+                    RichText::new(format!("// RUNNING {} ({} ms)", command, elapsed_ms))
+                        .color(t.warning())
+                        .monospace()
+                        .size(9.0),
+                );
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
                     .small_button(RichText::new("✕").color(t.danger()).monospace())
@@ -4073,7 +4428,15 @@ impl CyberFile {
                 self.run_terminal_command();
             }
             if ui
-                .button(RichText::new("RUN").color(t.success()).monospace().size(10.0))
+                .add_enabled(
+                    !self.terminal_task_running,
+                    egui::Button::new(
+                        RichText::new(if self.terminal_task_running { "BUSY" } else { "RUN" })
+                            .color(t.success())
+                            .monospace()
+                            .size(10.0),
+                    ),
+                )
                 .clicked()
             {
                 self.run_terminal_command();
@@ -4086,6 +4449,12 @@ impl CyberFile {
             if let Some(entry) = self.entries.get(idx) {
                 let new_name = self.rename_text.trim();
                 if !new_name.is_empty() {
+                    if let Err(e) = filesystem::validate_entry_name(new_name) {
+                        self.set_error(format!("Rename failed: {}", e));
+                        self.rename_index = None;
+                        self.rename_text.clear();
+                        return;
+                    }
                     let old_path = entry.path.clone();
                     let new_path = entry
                         .path

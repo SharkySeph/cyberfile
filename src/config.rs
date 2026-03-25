@@ -2,24 +2,34 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+/// Persisted operator configuration loaded from `config.toml`.
+///
+/// Field names are intentionally stable because they are used as serialized keys.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
+    /// Stable theme identifier that maps to `CyberTheme::id()`.
     #[serde(default = "default_theme")]
     pub theme: String,
+    /// Default file view mode identifier used during startup.
     #[serde(default = "default_view")]
     pub default_view: String,
+    /// Whether dotfiles and other hidden entries are visible in listings.
     #[serde(default)]
     pub show_hidden: bool,
+    /// Whether delete operations require confirmation before quarantine.
     #[serde(default = "default_true")]
     pub confirm_delete: bool,
+    /// Whether the startup boot animation should run on launch.
     #[serde(default = "default_true")]
     pub boot_sequence: bool,
     #[serde(default = "default_font_size")]
     pub font_size: f32,
     #[serde(default = "default_sidebar_width")]
     pub sidebar_width: f32,
+    /// Overlay subtle CRT scanlines across the viewport.
     #[serde(default)]
     pub scanlines_enabled: bool,
+    /// Apply the CRT-style screen-edge vignette effect.
     #[serde(default)]
     pub crt_effect: bool,
 
@@ -48,20 +58,26 @@ pub struct Settings {
     pub saved_tabs: Vec<String>,
 
     // ── Sound ────────────────────────────────────────────
+    /// Enable synthesized UI feedback sounds.
     #[serde(default)]
     pub sound_enabled: bool,
 
     // ── Phase D: Visual Effects ──────────────────────────
+    /// Render edge glow/bloom accents around the interface.
     #[serde(default)]
     pub neon_glow: bool,
+    /// Render color-shift artifacts for the chromatic glitch effect.
     #[serde(default)]
     pub chromatic_aberration: bool,
+    /// Overlay sparse animated holographic noise cells.
     #[serde(default)]
     pub holographic_noise: bool,
 
     // ── Phase E: Accessibility ───────────────────────────
+    /// Disable higher-motion visual effects for accessibility.
     #[serde(default)]
     pub reduced_motion: bool,
+    /// Strengthen readability-focused overlays and contrast cues.
     #[serde(default)]
     pub high_contrast: bool,
 }
@@ -118,6 +134,7 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// Absolute path to the operator configuration manifest.
     pub fn config_path() -> PathBuf {
         dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("."))
@@ -125,6 +142,7 @@ impl Settings {
             .join("config.toml")
     }
 
+    /// Load persisted settings or fall back to defaults when the manifest is missing or invalid.
     pub fn load() -> Self {
         let path = Self::config_path();
         if path.exists() {
@@ -137,6 +155,7 @@ impl Settings {
         Self::default()
     }
 
+    /// Persist the current configuration back to disk.
     pub fn save(&self) {
         let path = Self::config_path();
         if let Some(parent) = path.parent() {

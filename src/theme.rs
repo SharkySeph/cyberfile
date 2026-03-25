@@ -3,6 +3,10 @@ use serde::{Deserialize, Serialize};
 
 // ── CyberTheme Engine ──────────────────────────────────────────
 
+/// Stable theme palette identifiers used across persisted settings and UI rendering.
+///
+/// `name()` returns the operator-facing label shown in the settings panel.
+/// `id()` returns the serialized value stored in configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CyberTheme {
     NightCity,
@@ -22,6 +26,7 @@ impl Default for CyberTheme {
 }
 
 impl CyberTheme {
+    /// All selectable themes in the order they should appear in the configuration UI.
     pub fn all() -> &'static [CyberTheme] {
         &[
             Self::NightCity,
@@ -35,6 +40,7 @@ impl CyberTheme {
         ]
     }
 
+    /// User-facing theme label used in the settings panel and status copy.
     pub fn name(&self) -> &'static str {
         match self {
             Self::NightCity => "NIGHT CITY",
@@ -48,6 +54,7 @@ impl CyberTheme {
         }
     }
 
+    /// Stable serialized theme identifier stored in `Settings.theme`.
     pub fn id(&self) -> &'static str {
         match self {
             Self::NightCity => "night_city",
@@ -61,6 +68,7 @@ impl CyberTheme {
         }
     }
 
+    /// Short operator-facing description used by the theme picker cards.
     pub fn description(&self) -> &'static str {
         match self {
             Self::NightCity => "Neon cyan & magenta // Arasaka networks",
@@ -74,6 +82,7 @@ impl CyberTheme {
         }
     }
 
+    /// Rebuild a theme from the serialized identifier stored in configuration.
     pub fn from_id(id: &str) -> Self {
         match id {
             "section9" => Self::Section9,
@@ -300,6 +309,9 @@ pub const BORDER_ACTIVE: Color32 = Color32::from_rgb(0x00, 0x60, 0x66);
 
 // ── Apply Theme to egui ────────────────────────────────────────
 
+/// Apply a `CyberTheme` palette to the active egui context.
+///
+/// This is the single translation layer between theme palette semantics and egui visuals.
 pub fn apply_cyber_theme(ctx: &egui::Context, theme: CyberTheme) {
     let mut visuals = Visuals::dark();
 

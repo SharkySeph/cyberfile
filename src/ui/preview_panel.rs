@@ -542,7 +542,7 @@ impl CyberFile {
 
                 kv(ui, "SUB-SECTORS", &dirs.to_string(), t.primary());
                 kv(ui, "CONSTRUCTS", &files.to_string(), t.text_primary());
-                kv(ui, "CLOAKED", &hidden.to_string(), t.text_dim());
+                kv(ui, "HIDDEN", &hidden.to_string(), t.text_dim());
                 kv(ui, "SECTOR SIZE", &bytesize::ByteSize(total_size).to_string(), t.warning());
             }
             Err(_) => {

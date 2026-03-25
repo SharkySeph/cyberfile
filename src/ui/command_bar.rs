@@ -99,9 +99,9 @@ impl CyberFile {
                                 .size(13.0),
                         )
                         .on_hover_text(if self.show_hidden {
-                            "Hide cloaked files"
+                            "Hide hidden files"
                         } else {
-                            "Reveal cloaked files"
+                            "Show hidden files"
                         })
                         .clicked()
                     {

@@ -1,7 +1,8 @@
 use ssh2::Session;
 use std::io::Read;
-use std::net::TcpStream;
+use std::net::{TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 /// Connection state for a remote SFTP session
 pub struct SftpConnection {
@@ -24,11 +25,7 @@ pub struct RemoteEntry {
 impl SftpConnection {
     /// Connect to a remote host via SSH with key-based auth
     pub fn connect(host: &str, port: u16, user: &str) -> Result<Self, String> {
-        let addr = format!("{}:{}", host, port);
-        let tcp = TcpStream::connect(&addr)
-            .map_err(|e| format!("TCP connection to {} failed: {}", addr, e))?;
-        tcp.set_read_timeout(Some(std::time::Duration::from_secs(10)))
-            .ok();
+        let tcp = connect_tcp(host, port)?;
 
         let mut session = Session::new()
             .map_err(|e| format!("Failed to create SSH session: {}", e))?;
@@ -79,9 +76,7 @@ impl SftpConnection {
         user: &str,
         password: &str,
     ) -> Result<Self, String> {
-        let addr = format!("{}:{}", host, port);
-        let tcp = TcpStream::connect(&addr)
-            .map_err(|e| format!("TCP connection to {} failed: {}", addr, e))?;
+        let tcp = connect_tcp(host, port)?;
 
         let mut session = Session::new()
             .map_err(|e| format!("Failed to create SSH session: {}", e))?;
@@ -236,4 +231,32 @@ fn host_port_split(s: &str) -> (String, u16) {
     } else {
         (s.to_string(), 22)
     }
+}
+
+fn connect_tcp(host: &str, port: u16) -> Result<TcpStream, String> {
+    let addr = format!("{}:{}", host, port);
+    let timeout = Duration::from_secs(10);
+    let addrs = addr
+        .to_socket_addrs()
+        .map_err(|e| format!("Failed to resolve {}: {}", addr, e))?;
+
+    let mut last_error = None;
+    for socket_addr in addrs {
+        match TcpStream::connect_timeout(&socket_addr, timeout) {
+            Ok(stream) => {
+                stream.set_read_timeout(Some(timeout)).ok();
+                stream.set_write_timeout(Some(timeout)).ok();
+                return Ok(stream);
+            }
+            Err(e) => last_error = Some(e),
+        }
+    }
+
+    Err(format!(
+        "TCP connection to {} failed: {}",
+        addr,
+        last_error
+            .map(|e| e.to_string())
+            .unwrap_or_else(|| "no resolved addresses".to_string())
+    ))
 }

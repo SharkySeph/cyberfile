@@ -3,6 +3,16 @@ use eframe::egui::{self, RichText, Stroke, Color32};
 use crate::app::CyberFile;
 use crate::theme::CyberTheme;
 
+/// Declarative metadata for a settings toggle row.
+/// This keeps user-facing labels, shortcut indicators, and hover text aligned.
+struct ToggleSpec<'a> {
+    label: &'a str,
+    state: bool,
+    shortcut: &'a str,
+    on_color: Color32,
+    description: &'a str,
+}
+
 impl CyberFile {
     pub(crate) fn render_settings_panel(&mut self, ctx: &egui::Context) {
         let t = self.current_theme;
@@ -151,21 +161,10 @@ impl CyberFile {
                     Self::section_hex_header(ui, t, "DISPLAY MATRIX", t.primary());
                     ui.add_space(4.0);
 
-                    let display_toggles: Vec<(&str, bool, &str, Color32)> = vec![
-                        ("SCANLINES", self.scanlines_enabled, "F11", t.primary()),
-                        ("CRT EFFECT", self.crt_effect, "F12", t.primary()),
-                        ("CLOAKED FILES", self.show_hidden, "Ctrl+H", t.warning()),
-                        ("BOOT SEQUENCE", self.settings.boot_sequence, "", t.primary()),
-                        ("DATA RAIN", self.data_rain_enabled, "F10", t.success()),
-                        ("NEON GLOW", self.neon_glow, "F8", t.accent()),
-                        ("CHROM ABERR", self.chromatic_aberration, "F6", t.danger()),
-                        ("HOLO NOISE", self.holographic_noise, "", t.primary()),
-                        ("LOW MOTION", self.reduced_motion, "", t.text_dim()),
-                        ("HI CONTRAST", self.high_contrast, "", t.warning()),
-                    ];
+                    let display_toggles = self.display_toggle_specs(t);
 
-                    for (i, (name, state, key, on_color)) in display_toggles.iter().enumerate() {
-                        if Self::toggle_row(ui, t, name, *state, key, *on_color) {
+                    for (i, spec) in display_toggles.iter().enumerate() {
+                        if Self::toggle_row(ui, t, spec) {
                             match i {
                                 0 => {
                                     self.scanlines_enabled = !self.scanlines_enabled;
@@ -227,15 +226,10 @@ impl CyberFile {
                     Self::section_hex_header(ui, t, "INTERFACE", t.primary());
                     ui.add_space(4.0);
 
-                    let interface_toggles: Vec<(&str, bool, &str, Color32)> = vec![
-                        ("SIDEBAR", self.sidebar_visible, "Ctrl+B", t.primary()),
-                        ("VITAL SIGNS", self.resource_monitor_visible, "F3", t.primary()),
-                        ("CONFIRM DEL", self.settings.confirm_delete, "", t.success()),
-                        ("SOUND FX", self.sound_enabled, "", t.accent()),
-                    ];
+                    let interface_toggles = self.interface_toggle_specs(t);
 
-                    for (i, (name, state, key, on_color)) in interface_toggles.iter().enumerate() {
-                        if Self::toggle_row(ui, t, name, *state, key, *on_color) {
+                    for (i, spec) in interface_toggles.iter().enumerate() {
+                        if Self::toggle_row(ui, t, spec) {
                             match i {
                                 0 => self.sidebar_visible = !self.sidebar_visible,
                                 1 => {
@@ -451,7 +445,7 @@ impl CyberFile {
                             ("F5", "Refresh"),
                             ("F10", "Data Rain"),
                             ("F11", "Scanlines"),
-                            ("F12", "CRT Effect"),
+                            ("F12", "CRT Vignette"),
                             ("Ctrl+1/2/3/4", "List/Grid/Hive/Viewer"),
                             ("Ctrl+B", "Sidebar"),
                             ("Ctrl+F", "fzf Search"),
@@ -558,14 +552,122 @@ impl CyberFile {
         }
     }
 
+    /// Stable mapping for visual effect toggles shown in the settings panel.
+    /// Labels are intentionally explicit so they match the underlying effect names.
+    fn display_toggle_specs(&self, t: CyberTheme) -> Vec<ToggleSpec<'static>> {
+        vec![
+            ToggleSpec {
+                label: "SCANLINES",
+                state: self.scanlines_enabled,
+                shortcut: "F11",
+                on_color: t.primary(),
+                description: "Overlay subtle CRT scanlines across the full viewport.",
+            },
+            ToggleSpec {
+                label: "CRT VIGNETTE",
+                state: self.crt_effect,
+                shortcut: "F12",
+                on_color: t.primary(),
+                description: "Darken the screen edges and corners for a CRT-style vignette.",
+            },
+            ToggleSpec {
+                label: "HIDDEN FILES",
+                state: self.show_hidden,
+                shortcut: "Ctrl+H",
+                on_color: t.warning(),
+                description: "Show dotfiles and other normally hidden directory entries.",
+            },
+            ToggleSpec {
+                label: "BOOT SEQUENCE",
+                state: self.settings.boot_sequence,
+                shortcut: "",
+                on_color: t.primary(),
+                description: "Play the startup POST-style boot sequence before the main UI.",
+            },
+            ToggleSpec {
+                label: "DATA RAIN",
+                state: self.data_rain_enabled,
+                shortcut: "F10",
+                on_color: t.success(),
+                description: "Render the animated falling glyph background layer.",
+            },
+            ToggleSpec {
+                label: "NEON GLOW",
+                state: self.neon_glow,
+                shortcut: "F8",
+                on_color: t.accent(),
+                description: "Add subtle bloom-like glow around viewport edges.",
+            },
+            ToggleSpec {
+                label: "CHROMATIC ABERRATION",
+                state: self.chromatic_aberration,
+                shortcut: "F6",
+                on_color: t.danger(),
+                description: "Render color-shifted scan artifacts for a glitchier display.",
+            },
+            ToggleSpec {
+                label: "HOLOGRAPHIC NOISE",
+                state: self.holographic_noise,
+                shortcut: "",
+                on_color: t.primary(),
+                description: "Overlay sparse animated noise cells across the interface.",
+            },
+            ToggleSpec {
+                label: "REDUCED MOTION",
+                state: self.reduced_motion,
+                shortcut: "",
+                on_color: t.text_dim(),
+                description: "Disable higher-motion visual effects for accessibility.",
+            },
+            ToggleSpec {
+                label: "HIGH CONTRAST",
+                state: self.high_contrast,
+                shortcut: "",
+                on_color: t.warning(),
+                description: "Boost overlay readability with stronger contrast treatments.",
+            },
+        ]
+    }
+
+    /// Stable mapping for non-visual interface toggles shown in the settings panel.
+    fn interface_toggle_specs(&self, t: CyberTheme) -> Vec<ToggleSpec<'static>> {
+        vec![
+            ToggleSpec {
+                label: "SIDEBAR",
+                state: self.sidebar_visible,
+                shortcut: "Ctrl+B",
+                on_color: t.primary(),
+                description: "Show or hide the left-hand navigation and status sidebar.",
+            },
+            ToggleSpec {
+                label: "VITAL SIGNS",
+                state: self.resource_monitor_visible,
+                shortcut: "F3",
+                on_color: t.primary(),
+                description: "Toggle the resource monitor overlay for CPU, memory, and disk state.",
+            },
+            ToggleSpec {
+                label: "DELETE CONFIRM",
+                state: self.settings.confirm_delete,
+                shortcut: "",
+                on_color: t.success(),
+                description: "Require confirmation before moving entries into quarantine.",
+            },
+            ToggleSpec {
+                label: "SOUND FX",
+                state: self.sound_enabled,
+                shortcut: "",
+                on_color: t.accent(),
+                description: "Enable synthesized UI feedback sounds for navigation and actions.",
+            },
+        ]
+    }
+
     /// Toggle row with LED indicator: [LED] label [ON/OFF] shortcut
     fn toggle_row(
         ui: &mut egui::Ui,
         t: CyberTheme,
-        name: &str,
-        state: bool,
-        key: &str,
-        on_color: Color32,
+        spec: &ToggleSpec<'_>,
     ) -> bool {
         let resp = ui.horizontal(|ui| {
             ui.add_space(4.0);
@@ -573,8 +675,8 @@ impl CyberFile {
             // Status LED
             let (led_rect, _) =
                 ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
-            let led_color = if state {
-                on_color
+            let led_color = if spec.state {
+                spec.on_color
             } else {
                 Color32::from_rgba_premultiplied(
                     t.text_dim().r(),
@@ -585,16 +687,16 @@ impl CyberFile {
             };
             ui.painter()
                 .circle_filled(led_rect.center(), 3.0, led_color);
-            if state {
+            if spec.state {
                 ui.painter().circle_stroke(
                     led_rect.center(),
                     4.5,
                     Stroke::new(
                         0.5,
                         Color32::from_rgba_premultiplied(
-                            on_color.r(),
-                            on_color.g(),
-                            on_color.b(),
+                            spec.on_color.r(),
+                            spec.on_color.g(),
+                            spec.on_color.b(),
                             60,
                         ),
                     ),
@@ -602,17 +704,17 @@ impl CyberFile {
             }
 
             // Name
-            let text_color = if state { t.text_primary() } else { t.text_dim() };
+            let text_color = if spec.state { t.text_primary() } else { t.text_dim() };
             ui.label(
-                RichText::new(format!("{:<14}", name))
+                RichText::new(format!("{:<21}", spec.label))
                     .color(text_color)
                     .monospace()
                     .size(11.0),
             );
 
             // Status badge
-            let (badge_text, badge_color) = if state {
-                ("ON ", on_color)
+            let (badge_text, badge_color) = if spec.state {
+                ("ON ", spec.on_color)
             } else {
                 ("OFF", t.text_dim())
             };
@@ -624,10 +726,10 @@ impl CyberFile {
             );
 
             // Shortcut hint
-            if !key.is_empty() {
+            if !spec.shortcut.is_empty() {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(
-                        RichText::new(key)
+                        RichText::new(spec.shortcut)
                             .color(t.text_dim())
                             .monospace()
                             .size(9.0),
@@ -636,6 +738,9 @@ impl CyberFile {
             }
         });
 
-        resp.response.interact(egui::Sense::click()).clicked()
+        resp.response
+            .on_hover_text(spec.description)
+            .interact(egui::Sense::click())
+            .clicked()
     }
 }
