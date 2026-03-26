@@ -292,6 +292,14 @@ impl CyberFile {
                         "{}\n{} │ {} │ {}",
                         row.name, row.size, row.modified, row.permissions
                     ));
+                    // Scroll to this row if type-ahead just selected it
+                    if current_selected == Some(row.index)
+                        && !self.type_ahead_buffer.is_empty()
+                        && self.type_ahead_last_key.elapsed().as_millis() < 600
+                    {
+                        resp.scroll_to_me(Some(egui::Align::Center));
+                    }
+
                     if resp.clicked() {
                         click_action = Some((row.index, ctrl_held, shift_held));
                     }

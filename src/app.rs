@@ -170,6 +170,10 @@ pub struct CyberFile {
     pub(crate) sort_column: SortColumn,
     pub(crate) sort_ascending: bool,
 
+    // ── Type-ahead Search ────────────────────────────────
+    pub(crate) type_ahead_buffer: String,
+    pub(crate) type_ahead_last_key: Instant,
+
     // ── UI State ─────────────────────────────────────────
     pub(crate) sidebar_visible: bool,
     pub(crate) show_hidden: bool,
@@ -530,6 +534,8 @@ impl CyberFile {
             history_pos: 0,
             sort_column: SortColumn::Name,
             sort_ascending: true,
+            type_ahead_buffer: String::new(),
+            type_ahead_last_key: Instant::now(),
             sidebar_visible: true,
             show_hidden: settings.show_hidden,
             context_menu_open: false,
@@ -3404,8 +3410,51 @@ impl CyberFile {
                 self.network_mesh_open = false;
                 self.device_bay_open = false;
                 self.window_bridge_open = false;
+                self.type_ahead_buffer.clear();
             }
         });
+
+        // ── Type-ahead search in file list ─────────────────────
+        let any_dialog = self.rename_index.is_some()
+            || self.new_folder_dialog
+            || self.new_file_dialog
+            || self.confirm_delete_dialog
+            || self.content_search_dialog
+            || self.batch_rename_dialog
+            || self.settings_panel_open
+            || self.sftp_dialog
+            || self.open_with_dialog
+            || self.properties_dialog
+            || self.symlink_dialog
+            || self.focus_command_bar_next_frame;
+
+        if !any_dialog {
+            let typed_text: String = ctx.input(|input| {
+                if input.modifiers.ctrl || input.modifiers.alt {
+                    return String::new();
+                }
+                input.events.iter().filter_map(|e| {
+                    if let egui::Event::Text(t) = e { Some(t.as_str()) } else { None }
+                }).collect()
+            });
+
+            if !typed_text.is_empty() {
+                let now = Instant::now();
+                if now.duration_since(self.type_ahead_last_key).as_millis() > 500 {
+                    self.type_ahead_buffer.clear();
+                }
+                self.type_ahead_buffer.push_str(&typed_text);
+                self.type_ahead_last_key = now;
+
+                let search = self.type_ahead_buffer.to_lowercase();
+                if let Some(idx) = self.entries.iter().position(|e| {
+                    e.name.to_lowercase().starts_with(&search)
+                }) {
+                    self.selected = Some(idx);
+                    self.multi_selected.clear();
+                }
+            }
+        }
     }
 }
 
