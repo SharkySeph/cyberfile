@@ -3440,19 +3440,46 @@ impl CyberFile {
 
             if !typed_text.is_empty() {
                 let now = Instant::now();
-                if now.duration_since(self.type_ahead_last_key).as_millis() > 500 {
+                let timed_out = now.duration_since(self.type_ahead_last_key).as_millis() > 500;
+                if timed_out {
                     self.type_ahead_buffer.clear();
                 }
-                self.type_ahead_buffer.push_str(&typed_text);
-                self.type_ahead_last_key = now;
 
-                let search = self.type_ahead_buffer.to_lowercase();
-                if let Some(idx) = self.entries.iter().position(|e| {
-                    e.name.to_lowercase().starts_with(&search)
-                }) {
-                    self.selected = Some(idx);
-                    self.multi_selected.clear();
+                // Detect repeated single-character press (e.g. "f", "f", "f")
+                let single_char = typed_text.len() == 1;
+                let repeat_char = single_char
+                    && !timed_out
+                    && self.type_ahead_buffer.len() == 1
+                    && self.type_ahead_buffer == typed_text;
+
+                if repeat_char {
+                    // Cycle to next entry starting with this character
+                    let ch = typed_text.to_lowercase();
+                    let start = self.selected.map(|i| i + 1).unwrap_or(0);
+                    let len = self.entries.len();
+                    let found = (0..len).find_map(|offset| {
+                        let idx = (start + offset) % len;
+                        if self.entries[idx].name.to_lowercase().starts_with(&ch) {
+                            Some(idx)
+                        } else {
+                            None
+                        }
+                    });
+                    if let Some(idx) = found {
+                        self.selected = Some(idx);
+                        self.multi_selected.clear();
+                    }
+                } else {
+                    self.type_ahead_buffer.push_str(&typed_text);
+                    let search = self.type_ahead_buffer.to_lowercase();
+                    if let Some(idx) = self.entries.iter().position(|e| {
+                        e.name.to_lowercase().starts_with(&search)
+                    }) {
+                        self.selected = Some(idx);
+                        self.multi_selected.clear();
+                    }
                 }
+                self.type_ahead_last_key = now;
             }
         }
     }
