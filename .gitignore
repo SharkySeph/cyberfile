@@ -1,2 +1,13 @@
 /target
 /dist
+.vscode/
+.idea/
+.env
+.env.*
+*.pem
+*.key
+*.p12
+.DS_Store
+Thumbs.db
+*.swp
+*~

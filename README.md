@@ -120,65 +120,58 @@ POST-style startup animation with progress bar plus boot-deck actions.
 
 ## Installation
 
-### Pre-built Packages
+### Pre-built Packages (no Rust required)
 
-Build all packages at once with `./package.sh`, or install individual formats:
+Download a package from [Releases](https://github.com/SharkySeph/cyberfile/releases) or build packages locally with `./package.sh`.
+All packages ship a pre-compiled binary — **no Rust toolchain needed** to install and run.
 
 ```bash
-# Build packages (outputs to dist/)
-./package.sh
-
 # Debian / Ubuntu (.deb)
-sudo dpkg -i dist/cyberfile_1.2.3_amd64.deb
+sudo dpkg -i cyberfile_1.2.3_amd64.deb
+sudo apt install -f   # install any missing deps
 
 # Fedora / openSUSE (.rpm)
-sudo rpm -i dist/cyberfile-1.2.3-1.x86_64.rpm
-
-# Arch Linux (PKGBUILD)
-cd dist/arch && makepkg -si
+sudo rpm -i cyberfile-1.2.3-1.x86_64.rpm
 
 # Portable tarball (any Linux)
-tar xzf dist/cyberfile-1.2.3-linux-x86_64.tar.gz
+tar xzf cyberfile-1.2.3-linux-x86_64.tar.gz
 cd cyberfile-1.2.3 && ./install.sh
 ```
 
-### From Source
+### Build Packages from Source
+
+To generate `.deb`, `.rpm`, `.tar.gz`, and Arch `PKGBUILD` locally:
 
 ```bash
-# Dependencies (Debian/Ubuntu)
-sudo apt install libssl-dev libasound2-dev pkg-config
+# Requires: Rust 1.70+, cargo, and build deps (see below)
+./package.sh          # outputs to dist/
 
-# Build
-cargo build --release
-
-# Run
-./target/release/cyberfile
+# Arch Linux
+cd dist/arch && makepkg -si
 ```
 
-### System Install
+### From Source (development)
 
 ```bash
-# Install to /usr/local (requires sudo)
-sudo ./install.sh
+# Build dependencies (Debian/Ubuntu)
+sudo apt install libssl-dev libasound2-dev pkg-config
 
-# Or install to custom prefix
-PREFIX=~/.local ./install.sh
+# Build & run
+cargo build --release
+./target/release/cyberfile
+
+# Or install to your system
+sudo ./install.sh                # → /usr/local
+PREFIX=~/.local ./install.sh    # → ~/.local
 ```
 
 ### Uninstall
 
 ```bash
-# Remove user-local install
-./uninstall.sh
-
-# Remove system-wide .deb
-sudo dpkg -r cyberfile
-
-# Remove system-wide .rpm
-sudo rpm -e cyberfile
+./uninstall.sh              # remove user-local install
+sudo dpkg -r cyberfile      # remove .deb
+sudo rpm -e cyberfile       # remove .rpm
 ```
-
-The install script copies the binary, .desktop file, and icon to the appropriate directories.
 
 ---
 
@@ -283,12 +276,28 @@ The scene store keeps three layers of state:
 ## Requirements
 
 - Linux (X11 or Wayland)
-- Rust 1.70+ (for building)
 - OpenGL 3.3+ or Vulkan-capable GPU
-- Optional: `fzf` for fuzzy search, `playerctl` for music widget, `libssh2` for SFTP
+- Rust 1.70+ (only if building from source)
+
+### Optional Dependencies
+
+| Package | Used by |
+|---------|---------|
+| `fzf` | Fuzzy file search (Ctrl+F) |
+| `playerctl` | Music widget / MPRIS controls |
+| `xdotool` | X11 window focus/move (Tactical Bridge) |
+| `xprop` | X11 window listing (Tactical Bridge) |
+| `nmcli` | Network Mesh (Wi-Fi, VPN) |
+| `udisks2` | Device Bay (mount/unmount) |
+
+---
+
+## Contributing
+
+Contributions, bug reports, and feature requests are welcome! Please open an [issue](https://github.com/SharkySeph/cyberfile/issues) or submit a pull request.
 
 ---
 
 ## License
 
-MIT
+[MIT](LICENSE)

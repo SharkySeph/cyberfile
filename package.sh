@@ -121,7 +121,7 @@ Installed-Size: ${INSTALLED_SIZE}
 Depends: libc6 (>= 2.31), libgcc-s1, libgl1, libegl1, libxkbcommon0, libwayland-client0, libx11-6, libxcursor1, libxrandr2, libxi6
 Recommends: playerctl, xdotool, xprop
 Suggests: nmcli, udisks2, fzf
-Maintainer: CyberFile <cyberfile@localhost>
+Maintainer: SharkySeph <SharkySeph@users.noreply.github.com>
 Homepage: https://github.com/SharkySeph/cyberfile
 Description: Cyberpunk-themed file manager for Linux
  CyberFile is a GPU-accelerated, cyberpunk-themed file manager
@@ -246,7 +246,7 @@ build_pkgbuild() {
     mkdir -p "$PKGBUILD_DIR"
 
     cat > "$PKGBUILD_DIR/PKGBUILD" << 'PKGBUILD'
-# Maintainer: CyberFile <cyberfile@localhost>
+# Maintainer: SharkySeph <SharkySeph@users.noreply.github.com>
 pkgname=cyberfile
 pkgver=_VERSION_
 pkgrel=1
