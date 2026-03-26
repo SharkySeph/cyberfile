@@ -11,7 +11,7 @@ impl CyberFile {
 
         // Refresh media state periodically (every 3 seconds)
         if self.media_last_refresh.elapsed().as_secs() >= 3 {
-            self.media_state = media::get_state();
+            self.media_state = media::get_state_for_player(&self.media_preferred_player);
             self.media_last_refresh = std::time::Instant::now();
         }
 
@@ -114,6 +114,8 @@ impl CyberFile {
 
                 // Transport controls
                 ui.horizontal(|ui| {
+                    let pid = state.player_id.clone();
+
                     if ui
                         .button(
                             RichText::new("⏮")
@@ -124,7 +126,7 @@ impl CyberFile {
                         .on_hover_text("Previous track")
                         .clicked()
                     {
-                        media::previous_track();
+                        media::previous_track_player(&pid);
                     }
 
                     let play_icon = if state.playing { "⏸" } else { "▶" };
@@ -138,7 +140,7 @@ impl CyberFile {
                         .on_hover_text("Play/Pause")
                         .clicked()
                     {
-                        media::play_pause();
+                        media::play_pause_player(&pid);
                     }
 
                     if ui
@@ -151,7 +153,7 @@ impl CyberFile {
                         .on_hover_text("Next track")
                         .clicked()
                     {
-                        media::next_track();
+                        media::next_track_player(&pid);
                     }
                 });
             });

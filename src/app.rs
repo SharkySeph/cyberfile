@@ -1,6 +1,6 @@
 use eframe::egui::{self, Color32, RichText};
 use rodio::Source;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::{
     mpsc::{self, Receiver, Sender},
@@ -124,6 +124,7 @@ pub(crate) enum OperatorJobState {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub(crate) struct OperatorJob {
     pub id: u64,
     pub label: String,
@@ -140,6 +141,7 @@ pub(crate) struct OperatorJob {
 pub(crate) enum SignalDeckTab {
     #[default]
     Audio,
+    Media,
     Clipboard,
     Notifications,
     Power,
@@ -173,6 +175,7 @@ pub struct CyberFile {
     pub(crate) show_hidden: bool,
     pub(crate) context_menu_open: bool,
     pub(crate) context_menu_pos: egui::Pos2,
+    pub(crate) context_menu_just_opened: bool,
     pub(crate) data_rain_cols: Vec<f32>,
 
     // ── Command Bar ──────────────────────────────────────
@@ -232,8 +235,8 @@ pub struct CyberFile {
     pub(crate) sys_info: sysinfo::System,
     pub(crate) sys_disks: sysinfo::Disks,
     pub(crate) sys_last_refresh: Instant,
-    pub(crate) cpu_history: Vec<f32>,
-    pub(crate) mem_history: Vec<f32>,
+    pub(crate) cpu_history: VecDeque<f32>,
+    pub(crate) mem_history: VecDeque<f32>,
 
     // ── Settings Panel ───────────────────────────────────
     pub(crate) settings_panel_open: bool,
@@ -263,6 +266,10 @@ pub struct CyberFile {
     // ── Signal Deck (Stage 4) ────────────────────────────
     pub(crate) signal_deck_open: bool,
     pub(crate) signal_deck_tab: SignalDeckTab,
+    pub(crate) process_matrix_detached: bool,
+    pub(crate) service_deck_detached: bool,
+    pub(crate) log_viewer_detached: bool,
+    pub(crate) signal_deck_detached: bool,
     pub(crate) audio_snapshot: crate::integrations::audio::AudioSnapshot,
     pub(crate) audio_volume_slider: u32,
     pub(crate) audio_last_refresh: Instant,
@@ -272,6 +279,36 @@ pub struct CyberFile {
     pub(crate) clipboard_last_refresh: Instant,
     pub(crate) notification_entries: Vec<crate::integrations::audio::NotificationEntry>,
     pub(crate) notification_last_refresh: Instant,
+
+    // ── Network Mesh (Stage 5) ───────────────────────────
+    pub(crate) network_mesh_open: bool,
+    pub(crate) network_mesh_detached: bool,
+    pub(crate) network_mesh_tab: crate::ui::network_mesh::NetworkMeshTab,
+    pub(crate) network_nmcli_available: bool,
+    pub(crate) network_interfaces: Vec<crate::integrations::network::NetworkInterface>,
+    pub(crate) network_wifi_list: Vec<crate::integrations::network::WifiNetwork>,
+    pub(crate) network_vpn_list: Vec<crate::integrations::network::VpnConnection>,
+    pub(crate) network_last_refresh: Instant,
+    pub(crate) network_throughput_history: crate::ui::network_mesh::ThroughputHistory,
+    pub(crate) network_throughput_prev: std::collections::BTreeMap<String, crate::integrations::network::ThroughputSample>,
+
+    // ── Device Bay (Stage 5) ─────────────────────────────
+    pub(crate) device_bay_open: bool,
+    pub(crate) device_bay_detached: bool,
+    pub(crate) device_udisksctl_available: bool,
+    pub(crate) device_entries: Vec<crate::integrations::devices::BlockDevice>,
+    pub(crate) device_last_refresh: Instant,
+    pub(crate) device_show_all: bool,
+    pub(crate) device_error: Option<String>,
+
+    // ── Window Bridge (Stage 6) ──────────────────────────
+    pub(crate) window_bridge_open: bool,
+    pub(crate) window_bridge_detached: bool,
+    pub(crate) window_bridge_tab: crate::ui::window_bridge::WindowBridgeTab,
+    pub(crate) wm_backend: Option<crate::integrations::windows::WmBackend>,
+    pub(crate) wm_windows: Vec<crate::integrations::windows::WmWindow>,
+    pub(crate) wm_workspaces: Vec<crate::integrations::windows::WmWorkspace>,
+    pub(crate) wm_last_refresh: Instant,
 
     // ── Settings ─────────────────────────────────────────
     pub(crate) settings: Settings,
@@ -292,6 +329,12 @@ pub struct CyberFile {
     // ── Media / Music ────────────────────────────────────
     pub(crate) media_state: MediaState,
     pub(crate) media_last_refresh: Instant,
+    pub(crate) media_preferred_player: String,
+    pub(crate) media_players: Vec<crate::integrations::media::PlayerInfo>,
+    pub(crate) media_players_last_refresh: Instant,
+
+    // ── Idle Inhibit ─────────────────────────────────────
+    pub(crate) idle_inhibit_child: Option<std::process::Child>,
 
     // ── fzf Integration ──────────────────────────────────
     pub(crate) fzf_available: bool,
@@ -491,6 +534,7 @@ impl CyberFile {
             show_hidden: settings.show_hidden,
             context_menu_open: false,
             context_menu_pos: egui::pos2(0.0, 0.0),
+            context_menu_just_opened: false,
             data_rain_cols: (0..80).map(|i| (i as f32 * 7.77) % 100.0).collect(),
             command_bar_text: start_path.to_string_lossy().to_string(),
             command_bar_active: false,
@@ -524,8 +568,8 @@ impl CyberFile {
             sys_info: sys,
             sys_disks: disks,
             sys_last_refresh: Instant::now(),
-            cpu_history: Vec::new(),
-            mem_history: Vec::new(),
+            cpu_history: VecDeque::new(),
+            mem_history: VecDeque::new(),
             settings_panel_open: false,
             scene_manager_open: false,
             process_matrix_open: false,
@@ -551,6 +595,10 @@ impl CyberFile {
             log_last_refresh: Instant::now(),
             signal_deck_open: false,
             signal_deck_tab: SignalDeckTab::Audio,
+            process_matrix_detached: false,
+            service_deck_detached: false,
+            log_viewer_detached: false,
+            signal_deck_detached: false,
             audio_snapshot: crate::integrations::audio::AudioSnapshot::default(),
             audio_volume_slider: 50,
             audio_last_refresh: Instant::now(),
@@ -560,6 +608,30 @@ impl CyberFile {
             clipboard_last_refresh: Instant::now(),
             notification_entries: Vec::new(),
             notification_last_refresh: Instant::now(),
+            network_mesh_open: false,
+            network_mesh_detached: false,
+            network_mesh_tab: crate::ui::network_mesh::NetworkMeshTab::default(),
+            network_nmcli_available: crate::integrations::network::nmcli_available(),
+            network_interfaces: Vec::new(),
+            network_wifi_list: Vec::new(),
+            network_vpn_list: Vec::new(),
+            network_last_refresh: Instant::now(),
+            network_throughput_history: std::collections::BTreeMap::new(),
+            network_throughput_prev: std::collections::BTreeMap::new(),
+            device_bay_open: false,
+            device_bay_detached: false,
+            device_udisksctl_available: crate::integrations::devices::udisksctl_available(),
+            device_entries: Vec::new(),
+            device_last_refresh: Instant::now(),
+            device_show_all: false,
+            device_error: None,
+            window_bridge_open: false,
+            window_bridge_detached: false,
+            window_bridge_tab: crate::ui::window_bridge::WindowBridgeTab::default(),
+            wm_backend: crate::integrations::windows::detect_wm(),
+            wm_windows: Vec::new(),
+            wm_workspaces: Vec::new(),
+            wm_last_refresh: Instant::now(),
             settings,
             view_mode: ViewMode::List,
             tabs: saved_tabs,
@@ -568,6 +640,10 @@ impl CyberFile {
             data_rain_enabled: false,
             media_state: MediaState::default(),
             media_last_refresh: Instant::now(),
+            media_preferred_player: String::new(),
+            media_players: Vec::new(),
+            media_players_last_refresh: Instant::now(),
+            idle_inhibit_child: None,
             fzf_available: crate::integrations::fzf::is_available(),
             fzf_results: Vec::new(),
             fzf_mode: false,
@@ -936,6 +1012,82 @@ impl CyberFile {
         self.notification_last_refresh = Instant::now();
     }
 
+    // ── Network Mesh (Stage 5) ────────────────────────────
+
+    pub(crate) fn open_network_mesh(&mut self) {
+        self.network_mesh_open = true;
+        self.refresh_network_mesh(true);
+    }
+
+    pub(crate) fn refresh_network_mesh(&mut self, force: bool) {
+        if !force && self.network_last_refresh.elapsed().as_secs() < 5 {
+            return;
+        }
+        if !self.network_nmcli_available {
+            return;
+        }
+        self.network_interfaces = crate::integrations::network::list_interfaces().unwrap_or_default();
+        self.network_wifi_list = crate::integrations::network::list_wifi_networks().unwrap_or_default();
+        self.network_vpn_list = crate::integrations::network::list_vpn_connections().unwrap_or_default();
+
+        // Update throughput deltas
+        for iface in &self.network_interfaces {
+            if iface.state != "connected" {
+                continue;
+            }
+            if let Some(sample) = crate::integrations::network::read_throughput(&iface.device) {
+                if let Some(prev) = self.network_throughput_prev.get(&iface.device) {
+                    let rx_delta = sample.rx_bytes.saturating_sub(prev.rx_bytes);
+                    let tx_delta = sample.tx_bytes.saturating_sub(prev.tx_bytes);
+                    let history = self.network_throughput_history
+                        .entry(iface.device.clone())
+                        .or_insert_with(VecDeque::new);
+                    history.push_back((rx_delta, tx_delta));
+                    if history.len() > 30 {
+                        history.pop_front();
+                    }
+                }
+                self.network_throughput_prev.insert(iface.device.clone(), sample);
+            }
+        }
+
+        self.network_last_refresh = Instant::now();
+    }
+
+    // ── Device Bay (Stage 5) ─────────────────────────────
+
+    pub(crate) fn open_device_bay(&mut self) {
+        self.device_bay_open = true;
+        self.refresh_device_bay(true);
+    }
+
+    pub(crate) fn refresh_device_bay(&mut self, force: bool) {
+        if !force && self.device_last_refresh.elapsed().as_secs() < 5 {
+            return;
+        }
+        self.device_entries = crate::integrations::devices::list_block_devices().unwrap_or_default();
+        self.device_last_refresh = Instant::now();
+    }
+
+    // ── Window Bridge (Stage 6) ──────────────────────────
+
+    pub(crate) fn open_window_bridge(&mut self) {
+        self.window_bridge_open = true;
+        self.refresh_window_bridge(true);
+    }
+
+    pub(crate) fn refresh_window_bridge(&mut self, force: bool) {
+        if !force && self.wm_last_refresh.elapsed().as_secs() < 3 {
+            return;
+        }
+        let Some(backend) = self.wm_backend else {
+            return;
+        };
+        self.wm_windows = crate::integrations::windows::list_windows(backend).unwrap_or_default();
+        self.wm_workspaces = crate::integrations::windows::list_workspaces(backend).unwrap_or_default();
+        self.wm_last_refresh = Instant::now();
+    }
+
     fn start_operator_job(&mut self, command: &str, label: &str, cwd: &std::path::Path) -> u64 {
         let job_id = self.next_operator_job_id;
         self.next_operator_job_id += 1;
@@ -975,6 +1127,7 @@ impl CyberFile {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn restart_operator_job(&mut self, job_id: u64) {
         let Some(job) = self.operator_jobs.iter().find(|job| job.id == job_id).cloned() else {
             self.set_error(format!("Operator job not found: {}", job_id));
@@ -983,6 +1136,7 @@ impl CyberFile {
         self.run_embedded_shell_command_at(job.command, Some(job.label), job.cwd);
     }
 
+    #[allow(dead_code)]
     fn selected_log_channel(&self) -> Option<LogChannel> {
         let channel_id = self.log_selected_channel_id.as_ref()?;
         self.settings
@@ -1190,6 +1344,9 @@ impl CyberFile {
                 service_deck_visible: self.service_deck_open,
                 log_viewer_visible: self.log_viewer_open,
                 signal_deck_visible: self.signal_deck_open,
+                network_mesh_visible: self.network_mesh_open,
+                device_bay_visible: self.device_bay_open,
+                window_bridge_visible: self.window_bridge_open,
                 data_rain_enabled: self.data_rain_enabled,
             },
             terminal: MissionSceneTerminalState {
@@ -1456,6 +1613,9 @@ impl CyberFile {
         self.service_deck_open = scene.overlays.service_deck_visible;
         self.log_viewer_open = scene.overlays.log_viewer_visible;
         self.signal_deck_open = scene.overlays.signal_deck_visible;
+        self.network_mesh_open = scene.overlays.network_mesh_visible;
+        self.device_bay_open = scene.overlays.device_bay_visible;
+        self.window_bridge_open = scene.overlays.window_bridge_visible;
         self.data_rain_enabled = scene.overlays.data_rain_enabled;
         self.terminal_input = scene.terminal.input.clone();
         self.terminal_history = scene.terminal.history.clone();
@@ -1632,6 +1792,9 @@ impl CyberFile {
                     self.open_file(&path);
                 }
             }
+            LauncherAction::OpenNetworkMesh => self.open_network_mesh(),
+            LauncherAction::OpenDeviceBay => self.open_device_bay(),
+            LauncherAction::OpenWindowBridge => self.open_window_bridge(),
         }
     }
 
@@ -2188,7 +2351,7 @@ impl CyberFile {
                 let original_path = entry.path.clone();
                 match filesystem::delete_to_trash(&entry.path) {
                     Ok(trash_name) => {
-                        self.undo_stack.push(UndoAction::Delete {
+                        self.record_undo(UndoAction::Delete {
                             original_path,
                             trash_name,
                         });
@@ -2271,11 +2434,11 @@ impl CyberFile {
         // Record undo action
         match op {
             ClipboardOp::Copy if !copied_to.is_empty() => {
-                self.undo_stack.push(UndoAction::Copy { copied_to });
+                self.record_undo(UndoAction::Copy { copied_to });
                 self.redo_stack.clear();
             }
             ClipboardOp::Cut if !move_sources.is_empty() => {
-                self.undo_stack.push(UndoAction::Move {
+                self.record_undo(UndoAction::Move {
                     sources: move_sources,
                     destinations: move_dests,
                 });
@@ -2345,7 +2508,7 @@ impl CyberFile {
         match filesystem::create_directory(&self.current_path, &name) {
             Ok(path) => {
                 self.status_message = format!("Sector \"{}\" initialized", name);
-                self.undo_stack.push(UndoAction::Create {
+                self.record_undo(UndoAction::Create {
                     path,
                     kind: EntryKind::Directory,
                 });
@@ -2371,7 +2534,7 @@ impl CyberFile {
         match filesystem::create_file(&self.current_path, &name) {
             Ok(path) => {
                 self.status_message = format!("Construct \"{}\" initialized", name);
-                self.undo_stack.push(UndoAction::Create {
+                self.record_undo(UndoAction::Create {
                     path,
                     kind: EntryKind::File,
                 });
@@ -2414,7 +2577,7 @@ impl CyberFile {
                 let original_path = entry.path.clone();
                 match filesystem::delete_to_trash(&entry.path) {
                     Ok(trash_name) => {
-                        self.undo_stack.push(UndoAction::Delete {
+                        self.record_undo(UndoAction::Delete {
                             original_path,
                             trash_name,
                         });
@@ -2592,17 +2755,17 @@ impl CyberFile {
             self.sys_disks.refresh_list();
 
             let cpu = self.sys_info.global_cpu_usage();
-            self.cpu_history.push(cpu);
+            self.cpu_history.push_back(cpu);
             if self.cpu_history.len() > 60 {
-                self.cpu_history.remove(0);
+                self.cpu_history.pop_front();
             }
 
             let total_mem = self.sys_info.total_memory().max(1) as f32;
             let used_mem = self.sys_info.used_memory() as f32;
             let mem_pct = used_mem / total_mem * 100.0;
-            self.mem_history.push(mem_pct);
+            self.mem_history.push_back(mem_pct);
             if self.mem_history.len() > 60 {
-                self.mem_history.remove(0);
+                self.mem_history.pop_front();
             }
 
             self.sys_last_refresh = Instant::now();
@@ -2626,6 +2789,14 @@ impl CyberFile {
     }
 
     // ── Undo / Redo ────────────────────────────────────────
+
+    fn record_undo(&mut self, action: UndoAction) {
+        const MAX_UNDO: usize = 100;
+        self.undo_stack.push(action);
+        if self.undo_stack.len() > MAX_UNDO {
+            self.undo_stack.drain(..self.undo_stack.len() - MAX_UNDO);
+        }
+    }
 
     pub(crate) fn undo(&mut self) {
         if let Some(action) = self.undo_stack.pop() {
@@ -3179,6 +3350,30 @@ impl CyberFile {
                     self.open_log_viewer();
                 }
             }
+            // Network mesh (Ctrl+Shift+N)
+            if ctrl && shift && input.key_pressed(egui::Key::N) {
+                if self.network_mesh_open {
+                    self.network_mesh_open = false;
+                } else {
+                    self.open_network_mesh();
+                }
+            }
+            // Device bay (Ctrl+Shift+B)
+            if ctrl && shift && input.key_pressed(egui::Key::B) {
+                if self.device_bay_open {
+                    self.device_bay_open = false;
+                } else {
+                    self.open_device_bay();
+                }
+            }
+            // Window bridge (Ctrl+Shift+W)
+            if ctrl && shift && input.key_pressed(egui::Key::W) {
+                if self.window_bridge_open {
+                    self.window_bridge_open = false;
+                } else {
+                    self.open_window_bridge();
+                }
+            }
             if input.key_pressed(egui::Key::Escape) {
                 self.context_menu_open = false;
                 self.settings_panel_open = false;
@@ -3199,6 +3394,9 @@ impl CyberFile {
                 self.service_deck_open = false;
                 self.log_viewer_open = false;
                 self.signal_deck_open = false;
+                self.network_mesh_open = false;
+                self.device_bay_open = false;
+                self.window_bridge_open = false;
             }
         });
     }
@@ -3375,6 +3573,19 @@ impl eframe::App for CyberFile {
         // Stage 4 panel
         if self.signal_deck_open {
             self.render_signal_deck(ctx);
+        }
+
+        // Stage 5 panels
+        if self.network_mesh_open {
+            self.render_network_mesh(ctx);
+        }
+        if self.device_bay_open {
+            self.render_device_bay(ctx);
+        }
+
+        // Stage 6 panel
+        if self.window_bridge_open {
+            self.render_window_bridge(ctx);
         }
 
         // HUD overlay elements (NERV-style indicators)
@@ -4988,9 +5199,11 @@ impl CyberFile {
                     });
                 });
 
-                // Dismiss on click outside
+                // Dismiss on click outside (skip the frame menu was opened)
                 let menu_rect = resp.response.rect;
-                if ctx.input(|i| i.pointer.any_pressed()) {
+                if self.context_menu_just_opened {
+                    self.context_menu_just_opened = false;
+                } else if ctx.input(|i| i.pointer.any_pressed()) {
                     if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
                         if !menu_rect.contains(pos) {
                             self.context_menu_open = false;
@@ -5599,9 +5812,11 @@ impl CyberFile {
             self.context_menu_open = false;
         }
 
-        // Dismiss if clicked outside the radial menu
+        // Dismiss if clicked outside the radial menu (skip the frame menu was opened)
         let dismiss_radius = ring_radius + hex_radius + 12.0;
-        if ctx.input(|i| i.pointer.any_pressed()) {
+        if self.context_menu_just_opened {
+            self.context_menu_just_opened = false;
+        } else if ctx.input(|i| i.pointer.any_pressed()) {
             if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
                 let dx = pos.x - center_pos.x;
                 let dy = pos.y - center_pos.y;
@@ -5660,6 +5875,15 @@ impl CyberFile {
                 .clicked()
             {
                 self.load_split_pane_directory();
+            }
+            if ui
+                .small_button(RichText::new("✕").color(t.danger()).monospace())
+                .on_hover_text("Close Dual Jack (F4)")
+                .clicked()
+            {
+                self.split_pane_active = false;
+                self.split_pane_entries.clear();
+                self.status_message = "Split view deactivated".into();
             }
         });
         ui.add_space(2.0);
@@ -5903,7 +6127,7 @@ impl CyberFile {
                     } else {
                         self.status_message =
                             format!("ID reassigned: {} \u{2192} {}", entry.name, new_name);
-                        self.undo_stack.push(UndoAction::Rename {
+                        self.record_undo(UndoAction::Rename {
                             old_path,
                             new_path,
                         });

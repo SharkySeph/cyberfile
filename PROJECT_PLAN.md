@@ -264,7 +264,7 @@ All effects are independently togglable and have intensity sliders:
 On launch, display a 2-3 second boot screen (skippable):
 
 ```text
-[SYSTEM] CYBERFILE v1.1.2
+[SYSTEM] CYBERFILE v1.2.0
 [SYSTEM] Initializing kernel interface... OK
 [SYSTEM] Mounting filesystem nodes...
 [  OK  ] /home — USER DATA SECTOR
@@ -330,7 +330,7 @@ Styled as a translucent dark panel with neon border, items include:
 
 ## Current Implementation Status
 
-> **Last Updated:** Phase E complete — 96% Dolphin parity (50/0/2)
+> **Last Updated:** Stage 4 complete, security & efficiency hardened — 96% Dolphin parity (50/0/2)
 
 ### Implemented & Working
 
@@ -369,6 +369,14 @@ Styled as a translucent dark panel with neon border, items include:
 | **Accessibility** | ✅ Complete | Reduced motion mode (disables animations), high contrast mode (boosted borders + overlay) |
 | **.desktop + Install** | ✅ Complete | cyberfile.desktop, install.sh with PREFIX, icon installation |
 | **README** | ✅ Complete | Full feature docs, keyboard shortcuts, install instructions |
+| **Protocol Launcher** | ✅ Complete | Two-mode command surface (PATH/PROTO), 20+ built-in actions, global + local `.cyberfile.toml` manifests, fuzzy search |
+| **Scene System** | ✅ Complete | Mission Scenes with full state capture/restore, pinned scenes, boot deck, Alt+1..4 quick slots, `scenes.toml` persistence |
+| **Scene Manager** | ✅ Complete | Capture, restore, pin, rename, delete flows with hex-themed UI |
+| **Process Matrix** | ✅ Complete | Live process list with search, sort (CPU/MEM/NAME/PID), kill/force-kill, CWD display, child count (Ctrl+Shift+P) |
+| **Service Deck** | ✅ Complete | systemd --user units: start/stop/restart/enable/disable, status inspection, filter bar (Ctrl+D) |
+| **Log Viewer** | ✅ Complete | journalctl channels with saved watch channels, color-coded lines, service-specific channels (Ctrl+J) |
+| **Signal Deck** | ✅ Complete | Audio mixer (PipeWire/PulseAudio), mic mute, clipboard history (cliphist), notification history (dunst/swaync), battery/brightness/power profile, MPRIS media bus with player switching/seek/progress, idle inhibit (Ctrl+Shift+D) |
+| **Detachable Viewports** | ✅ Complete | Process Matrix, Service Deck, Log Viewer, Signal Deck all support detaching into separate windows |
 
 ### Partially Implemented
 
@@ -379,6 +387,7 @@ Styled as a translucent dark panel with neon border, items include:
 | **Preview** | ✅ Complete | Text with syntax highlighting, metadata, image thumbnails in Grid view, ZIP archive contents listing | No media preview |
 | **Properties** | ✅ Complete | CONSTRUCT PROFILE dialog with all metadata, visual chmod editor, resolved owner/group names | No extended attrs |
 | **Window State** | ✅ Complete | Window size + last directory + tabs + bookmarks persisted | — |
+| **MPRIS Media** | ✅ Complete | Sidebar music widget with transport controls, Signal Deck media tab with player switching, seek/progress bar, per-player transport controls | Artwork cache |
 
 ### Not Implemented (Dolphin Parity Gaps)
 
@@ -456,6 +465,9 @@ Styled as a translucent dark panel with neon border, items include:
 | Delete | Quarantine (trash) |
 | Arrow keys | Selection navigation |
 | Enter | Open file/folder |
+| Ctrl+Shift+S | Save current scene |
+| Ctrl+Alt+S | Scene manager |
+| Alt+1..4 | Quick scene restore (boot deck slots) |
 | Escape | Close overlays / terminal |
 
 ### Architecture (Actual)
@@ -474,31 +486,43 @@ cyberfile/
 │   └── icon-48.png
 ├── src/
 │   ├── main.rs                  # Entry point, 1280×800 window
-│   ├── app.rs                   # CyberFile struct, state machine, eframe::App impl (~1350 LOC)
+│   ├── app.rs                   # CyberFile struct, state machine, eframe::App impl
 │   ├── config.rs                # Settings with TOML persistence
 │   ├── filesystem.rs            # FileEntry, read/sort/CRUD operations
+│   ├── launcher.rs              # Protocol registry + action filtering (PATH/PROTO modes)
+│   ├── scenes.rs                # Mission Scene serialization model + SceneStore persistence
 │   ├── theme.rs                 # CyberTheme engine, 8 themes, apply_cyber_theme
 │   ├── integrations/
 │   │   ├── mod.rs
+│   │   ├── audio.rs             # PipeWire/PulseAudio volume, mic, sinks/sources, clipboard, notifications, power
 │   │   ├── dbus.rs              # D-Bus integration, CLI path handling
 │   │   ├── fzf.rs               # fzf fuzzy search integration
+│   │   ├── journald.rs          # journalctl readers / log channel filters
 │   │   ├── media.rs             # MPRIS/playerctl music detection
+│   │   ├── processes.rs         # Process inventory + task control via /proc + sysinfo
+│   │   ├── services.rs          # systemd --user integration
 │   │   └── sftp.rs              # SFTP/SSH remote file browsing
 │   └── ui/
 │       ├── mod.rs
 │       ├── boot_screen.rs       # POST-style boot animation
-│       ├── command_bar.rs       # Top nav bar with path input + view toggles
+│       ├── command_bar.rs       # Top nav bar with path input + protocol launcher
 │       ├── data_rain.rs         # Matrix-style falling character effect
 │       ├── effects.rs           # Scanlines, CRT vignette, glitch, neon glow, chromatic aberration, holographic noise, high contrast, HUD brackets
 │       ├── file_view.rs         # List view: breadcrumbs + sortable column listing
 │       ├── grid_view.rs         # Grid view: thumbnail card layout
+│       ├── hex_grid_view.rs     # HIVE hexagonal grid view
 │       ├── hex_viewer.rs        # Hex dump view for binary files
-│       ├── hud_overlay.rs       # Fullscreen HUD overlay (F9)
+│       ├── hud_overlay.rs       # Fullscreen HUD overlay
+│       ├── log_viewer.rs        # journalctl log viewer with saved channels
 │       ├── music_widget.rs      # MPRIS music player controls
 │       ├── preview_panel.rs     # Right-side file preview panel
+│       ├── process_matrix.rs    # Live process browser + task controls
 │       ├── resource_monitor.rs  # CPU/RAM/disk vital signs panel
+│       ├── scene_manager.rs     # Save/restore working scenes UI
+│       ├── service_deck.rs      # systemd --user service list + controls
 │       ├── settings_panel.rs    # Configuration manifest window (hex-themed)
 │       ├── sidebar.rs           # Quick access + Neural Links + disk stats
+│       ├── signal_deck.rs       # Audio/clipboard/notifications/power controls
 │       ├── status_bar.rs        # Bottom info bar with clock
 │       └── tabs.rs              # Multi-tab management
 └── themes/
@@ -594,6 +618,13 @@ cyberfile/
 | **Resource Monitor** | Real-time CPU/RAM/disk with sparklines and threat assessment |
 | **Music Widget** | MPRIS sidebar music controls (Spotify, VLC, Firefox, etc.) |
 | **fzf Integration** | External fuzzy finder integration |
+| **Protocol Launcher** | Two-mode command surface (PATH/PROTO) with 20+ built-in actions, global + local manifests |
+| **Mission Scenes** | Full session state capture/restore with pinned scenes, boot deck, and one-key switching |
+| **Process Matrix** | Live process browser with search, sort, kill, CWD display, detachable viewport |
+| **Service Deck** | systemd --user service management with start/stop/restart/enable/disable |
+| **Log Viewer** | journalctl-backed log channels with color-coded output and saved watch channels |
+| **Signal Deck** | Audio mixer, mic mute, clipboard history, notification history, battery/brightness/power, MPRIS media bus, idle inhibit |
+| **Detachable Viewports** | Sub-consoles can pop out into independent windows |
 | **Cyberpunk Naming** | Quarantine, Neural Links, Jack In, HIVE Protocol, etc. |
 
 ### 5.3 Summary Scorecard
@@ -788,51 +819,62 @@ cyberfile/
 
 **Outcome:** The app starts to feel like a mini DE inside the existing DE.
 
-- [ ] Add audio route controls, mic mute, volume mixer, and current sink/source visibility
-- [ ] Expand MPRIS into a generalized media bus: playback, player switch, progress, artwork cache
-- [ ] Add notification history and clipboard history panels
-- [ ] Add laptop-oriented controls where available: battery, brightness, power profile, idle inhibit
+- [x] Add audio route controls, mic mute, volume mixer, and current sink/source visibility — PipeWire (`wpctl`) + PulseAudio (`pactl`) auto-detected, per-stream mixer
+- [x] Expand MPRIS into a generalized media bus: playback, player switch, progress — Signal Deck Media tab with player selector, seek/progress bar, per-player transport controls; sidebar music widget uses player-targeted commands; relay bridges (e.g. kdeconnect) deprioritized in auto-detection
+- [x] Add notification history and clipboard history panels — dunst/swaync notifications + cliphist clipboard integration
+- [x] Add laptop-oriented controls where available: battery, brightness, power profile, idle inhibit — `upower`, `brightnessctl`, `powerprofilesctl`, `systemd-inhibit` integrated
+
+#### Stage 4.5 — Customizable Layout — "HUD ARCHITECT"
+
+**Outcome:** Operators can tailor the sidebar to their workflow — reorder, show, or hide any widget section.
+
+- [x] Define a `SidebarWidget` enum covering all sidebar sections (Quick Access, Neural Links, Mission Scenes, System Status, Containment Zone, Net Runner, Operator Deck, Music Widget)
+- [x] Add a `sidebar_layout` field to `Settings` (Vec of `{ widget, visible }` entries) persisted in `config.toml`
+- [x] Refactor `render_sidebar` to iterate the layout list instead of hardcoding section order
+- [x] Add a "HUD ARCHITECT" panel (accessible from the sidebar or settings) with drag-to-reorder and per-widget visibility toggles
+- [x] Include sensible defaults that match the current layout so existing users see no change
+- [ ] Persist layout changes across sessions and integrate with Mission Scenes (scene snapshots can optionally store their own sidebar layout)
 
 #### Stage 5 — Network + Devices — "FIELD OPS"
 
 **Outcome:** Local, remote, and removable resources all feel part of one interface.
 
-- [ ] Add Network Mesh status for interfaces, SSIDs, VPN tunnels, and transfer throughput
+- [x] Add Network Mesh status for interfaces, SSIDs, VPN tunnels, and transfer throughput
 - [ ] Add SSH bookmark vault with connect, reconnect, and scene binding
-- [ ] Add Device Bay for removable disks and media with mount/eject actions and health/status readouts
+- [x] Add Device Bay for removable disks and media with mount/eject actions and health/status readouts
 - [ ] Expand remote nodes beyond SFTP to SMB/NFS where practical
 
 #### Stage 6 — Optional WM Hooks — "TACTICAL BRIDGE"
 
 **Outcome:** Cyberfile can coordinate the surrounding desktop without owning it.
 
-- [ ] Add optional window-manager bridges for Hyprland, Sway, and i3
-- [ ] Surface launch/focus/move-to-workspace actions from the command layer
+- [x] Add optional window-manager bridges for Hyprland, Sway, and i3
+- [x] Surface launch/focus/move-to-workspace actions from the command layer
 - [ ] Support scene actions that open/focus external apps and arrange them loosely through compositor hooks
-- [ ] Keep all WM-specific features behind capability detection and settings flags
+- [x] Keep all WM-specific features behind capability detection and settings flags
 
 #### Suggested Module Additions
 
 ```text
 src/
-    launcher.rs        # protocol registry + action filtering
-    scenes.rs          # mission scene serialization model
+    launcher.rs        # ✅ protocol registry + action filtering
+    scenes.rs          # ✅ mission scene serialization model
     integrations/
-        audio.rs           # volume, mic, sinks/sources
-        devices.rs         # udisks2 / removable media state
-        journald.rs        # journalctl readers / log filters
-        network.rs         # nmcli / D-Bus network state
-        processes.rs       # process inventory + task control
-        services.rs        # systemd --user integration
-        windows.rs         # optional compositor / WM bridge
+        audio.rs           # ✅ volume, mic, sinks/sources, clipboard, notifications, power
+        devices.rs         # ❌ udisks2 / removable media state
+        journald.rs        # ✅ journalctl readers / log filters
+        network.rs         # ❌ nmcli / D-Bus network state
+        processes.rs       # ✅ process inventory + task control
+        services.rs        # ✅ systemd --user integration
+        windows.rs         # ❌ optional compositor / WM bridge
     ui/
-        launcher.rs        # registry-driven command palette
-        scene_manager.rs   # save/restore working scenes
-        process_matrix.rs  # process browser + task controls
-        service_deck.rs    # service list + logs
-        signal_deck.rs     # media/audio/notifications/clipboard
-        network_mesh.rs    # network + remote status
-        device_bay.rs      # mountable devices + removable media
+        scene_manager.rs   # ✅ save/restore working scenes
+        process_matrix.rs  # ✅ process browser + task controls
+        service_deck.rs    # ✅ service list + logs
+        signal_deck.rs     # ✅ media/audio/notifications/clipboard
+        log_viewer.rs      # ✅ journalctl log viewer
+        network_mesh.rs    # ❌ network + remote status
+        device_bay.rs      # ❌ mountable devices + removable media
 ```
 
 #### Non-Goals
@@ -873,6 +915,14 @@ src/
 - Sandboxed file preview (no execution of previewed files)
 - Respect filesystem permissions strictly
 - Optional: integration with SELinux/AppArmor context display
+- SSH host key verification via `~/.ssh/known_hosts` (TOFU with mismatch rejection)
+- `.cyberfile.toml` manifest walk restricted to user's home directory tree
+- `systemctl` commands use `--` separator to prevent unit name injection
+- Recursive copy guarded with 64-level depth limit against symlink loops
+- Audio backend detection cached to avoid repeated process spawns
+- `pactl --format=json` minified output normalized via `expand_json()` for reliable line-based parsing
+- MPRIS transport commands target the specific player instance (sidebar + Signal Deck); relay bridges like kdeconnect deprioritized in auto-detection
+- Undo stack capped at 100 entries to prevent unbounded memory growth
 
 ### 7.4 Implementation Notes for Key Features
 

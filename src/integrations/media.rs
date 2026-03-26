@@ -1,6 +1,7 @@
 use std::process::{Command, Stdio};
 
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 pub struct MediaState {
     pub title: String,
     pub artist: String,
@@ -8,14 +9,88 @@ pub struct MediaState {
     pub playing: bool,
     pub available: bool,
     pub player_name: String,
+    pub player_id: String,
+    pub position_secs: f64,
+    pub duration_secs: f64,
+    pub art_url: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct PlayerInfo {
+    pub id: String,
+    pub display_name: String,
+    pub status: String,
+}
+
+/// List all available MPRIS players with their status.
+/// Uses a single playerctl call to fetch all statuses at once.
+pub fn list_players() -> Vec<PlayerInfo> {
+    // playerctl --all-players status --format '{{playerInstance}}\t{{status}}'
+    let output = match Command::new("playerctl")
+        .args(["--all-players", "status", "--format", "{{playerInstance}}\t{{status}}"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+    {
+        Ok(o) if o.status.success() => o,
+        _ => return Vec::new(),
+    };
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .filter_map(|line| {
+            let mut parts = line.splitn(2, '\t');
+            let id = parts.next()?.trim().to_string();
+            let status = parts.next().map(|s| s.trim().to_string()).unwrap_or_else(|| "Unknown".into());
+            if id.is_empty() {
+                return None;
+            }
+            let display_name = friendly_name(&id);
+            Some(PlayerInfo {
+                id,
+                display_name,
+                status,
+            })
+        })
+        .collect()
+}
+
+/// Switch to a specific player by id (no-op — caller stores preference).
+#[allow(dead_code)]
+pub fn switch_player(player_id: &str) {
+    let _ = player_id;
+}
+
+/// Seek to an absolute position (seconds) on the given player.
+pub fn seek_to(player_id: &str, position_secs: f64) {
+    // playerctl position sets absolute position in seconds
+    let _ = Command::new("playerctl")
+        .args(["--player", player_id, "position", &format!("{:.1}", position_secs)])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .output();
+}
+
+/// Get state for a specific player (or auto-detect if empty).
+pub fn get_state_for_player(preferred: &str) -> MediaState {
+    let player = if preferred.is_empty() {
+        match get_active_player() {
+            Some(p) => p,
+            None => return MediaState::default(),
+        }
+    } else {
+        preferred.to_string()
+    };
+    get_state_impl(&player)
 }
 
 /// Detect the currently active MPRIS player (if any).
 /// Returns the player instance name (e.g. "spotify", "firefox.instance123", "vlc").
+/// Uses a single playerctl call to get all player statuses at once.
 pub fn get_active_player() -> Option<String> {
-    // First try to find a playing player
     let output = Command::new("playerctl")
-        .args(["--list-all"])
+        .args(["--all-players", "status", "--format", "{{playerInstance}}\t{{status}}"])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .output()
@@ -25,60 +100,42 @@ pub fn get_active_player() -> Option<String> {
         return None;
     }
 
-    let players: Vec<String> = String::from_utf8_lossy(&output.stdout)
+    let entries: Vec<(String, String)> = String::from_utf8_lossy(&output.stdout)
         .lines()
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
+        .filter_map(|line| {
+            let mut parts = line.splitn(2, '\t');
+            let id = parts.next()?.trim().to_string();
+            let status = parts.next().map(|s| s.trim().to_string()).unwrap_or_default();
+            if id.is_empty() { None } else { Some((id, status)) }
+        })
         .collect();
 
-    if players.is_empty() {
+    if entries.is_empty() {
         return None;
     }
 
-    // Check each player's status, prefer one that's Playing
-    for player in &players {
-        let status = Command::new("playerctl")
-            .args(["--player", player, "status"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .output()
-            .ok()
-            .and_then(|o| {
-                if o.status.success() {
-                    Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-                } else {
-                    None
-                }
-            });
+    // Prefer Playing, then Paused, then first available.
+    // Deprioritise relay-style bridges (e.g. kdeconnect) that are not
+    // directly controllable as local players.
+    let is_relay = |id: &str| id.starts_with("kdeconnect");
 
-        if status.as_deref() == Some("Playing") {
-            return Some(player.clone());
-        }
+    // Playing local player first
+    if let Some((id, _)) = entries.iter().find(|(id, s)| s == "Playing" && !is_relay(id)) {
+        return Some(id.clone());
     }
-
-    // If none are playing, check for paused
-    for player in &players {
-        let status = Command::new("playerctl")
-            .args(["--player", player, "status"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .output()
-            .ok()
-            .and_then(|o| {
-                if o.status.success() {
-                    Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-                } else {
-                    None
-                }
-            });
-
-        if status.as_deref() == Some("Paused") {
-            return Some(player.clone());
-        }
+    // Playing relay as fallback
+    if let Some((id, _)) = entries.iter().find(|(_, s)| s == "Playing") {
+        return Some(id.clone());
     }
-
-    // Fall back to first listed player
-    Some(players[0].clone())
+    // Paused local player
+    if let Some((id, _)) = entries.iter().find(|(id, s)| s == "Paused" && !is_relay(id)) {
+        return Some(id.clone());
+    }
+    // Paused relay
+    if let Some((id, _)) = entries.iter().find(|(_, s)| s == "Paused") {
+        return Some(id.clone());
+    }
+    Some(entries[0].0.clone())
 }
 
 /// Friendly display name from a player instance ID
@@ -88,21 +145,9 @@ fn friendly_name(player: &str) -> String {
     base.to_uppercase()
 }
 
-/// Query current media playback state via playerctl MPRIS.
-/// Auto-detects the active player.
-pub fn get_state() -> MediaState {
-    let player = match get_active_player() {
-        Some(p) => p,
-        None => {
-            return MediaState {
-                available: false,
-                ..Default::default()
-            }
-        }
-    };
-
+fn get_state_impl(player: &str) -> MediaState {
     let status = Command::new("playerctl")
-        .args(["--player", &player, "status"])
+        .args(["--player", player, "status"])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .output()
@@ -118,21 +163,16 @@ pub fn get_state() -> MediaState {
     let playing = match status.as_deref() {
         Some("Playing") => true,
         Some("Paused") => false,
-        _ => {
-            return MediaState {
-                available: false,
-                ..Default::default()
-            }
-        }
+        _ => return MediaState::default(),
     };
 
     let metadata = Command::new("playerctl")
         .args([
             "--player",
-            &player,
+            player,
             "metadata",
             "--format",
-            "{{title}}\n{{artist}}\n{{album}}",
+            "{{title}}\n{{artist}}\n{{album}}\n{{mpris:artUrl}}",
         ])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -146,17 +186,41 @@ pub fn get_state() -> MediaState {
             }
         });
 
-    let (title, artist, album) = match metadata {
+    let (title, artist, album, art_url) = match metadata {
         Some(m) => {
             let lines: Vec<&str> = m.lines().collect();
             (
                 lines.first().unwrap_or(&"").to_string(),
                 lines.get(1).unwrap_or(&"").to_string(),
                 lines.get(2).unwrap_or(&"").to_string(),
+                lines.get(3).unwrap_or(&"").to_string(),
             )
         }
-        None => (String::new(), String::new(), String::new()),
+        None => (String::new(), String::new(), String::new(), String::new()),
     };
+
+    // Position (seconds, float)
+    let position_secs = Command::new("playerctl")
+        .args(["--player", player, "position"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<f64>().ok())
+        .unwrap_or(0.0);
+
+    // Duration (microseconds from metadata)
+    let duration_secs = Command::new("playerctl")
+        .args(["--player", player, "metadata", "mpris:length"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<f64>().ok())
+        .map(|us| us / 1_000_000.0)
+        .unwrap_or(0.0);
 
     MediaState {
         title,
@@ -164,30 +228,34 @@ pub fn get_state() -> MediaState {
         album,
         playing,
         available: true,
-        player_name: friendly_name(&player),
+        player_name: friendly_name(player),
+        player_id: player.to_string(),
+        position_secs,
+        duration_secs,
+        art_url,
     }
 }
 
-pub fn play_pause() {
+pub fn play_pause_player(player_id: &str) {
     let _ = Command::new("playerctl")
-        .args(["play-pause"])
+        .args(["--player", player_id, "play-pause"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .spawn();
+        .output();
 }
 
-pub fn next_track() {
+pub fn next_track_player(player_id: &str) {
     let _ = Command::new("playerctl")
-        .args(["next"])
+        .args(["--player", player_id, "next"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .spawn();
+        .output();
 }
 
-pub fn previous_track() {
+pub fn previous_track_player(player_id: &str) {
     let _ = Command::new("playerctl")
-        .args(["previous"])
+        .args(["--player", player_id, "previous"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .spawn();
+        .output();
 }

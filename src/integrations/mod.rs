@@ -1,8 +1,11 @@
 pub mod audio;
 pub mod dbus;
+pub mod devices;
 pub mod fzf;
 pub mod journald;
 pub mod media;
+pub mod network;
 pub mod processes;
 pub mod sftp;
 pub mod services;
+pub mod windows;

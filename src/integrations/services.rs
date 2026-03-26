@@ -121,7 +121,7 @@ fn list_unit_file_states() -> Result<HashMap<String, String>, String> {
 
 pub fn inspect_user_service(unit: &str) -> Result<String, String> {
     let output = Command::new("systemctl")
-        .args(["--user", "status", unit, "--no-pager", "--lines=40"])
+        .args(["--user", "status", "--", unit, "--no-pager", "--lines=40"])
         .output()
         .map_err(|error| format!("systemctl failed: {}", error))?;
 
@@ -137,7 +137,7 @@ pub fn inspect_user_service(unit: &str) -> Result<String, String> {
 
 pub fn control_user_service(unit: &str, action: ServiceAction) -> Result<String, String> {
     let output = Command::new("systemctl")
-        .args(["--user", action.label(), unit])
+        .args(["--user", action.label(), "--", unit])
         .output()
         .map_err(|error| format!("systemctl failed: {}", error))?;
 

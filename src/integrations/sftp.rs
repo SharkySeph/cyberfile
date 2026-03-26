@@ -1,4 +1,4 @@
-use ssh2::Session;
+use ssh2::{CheckResult, KnownHostFileKind, Session};
 use std::io::Read;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
@@ -33,6 +33,8 @@ impl SftpConnection {
         session
             .handshake()
             .map_err(|e| format!("SSH handshake failed: {}", e))?;
+
+        verify_host_key(&session, host, port)?;
 
         // Try SSH agent first
         if session.userauth_agent(user).is_ok() && session.authenticated() {
@@ -84,6 +86,8 @@ impl SftpConnection {
         session
             .handshake()
             .map_err(|e| format!("SSH handshake failed: {}", e))?;
+
+        verify_host_key(&session, host, port)?;
 
         session
             .userauth_password(user, password)
@@ -230,6 +234,45 @@ fn host_port_split(s: &str) -> (String, u16) {
         (host, port)
     } else {
         (s.to_string(), 22)
+    }
+}
+
+fn verify_host_key(session: &Session, host: &str, port: u16) -> Result<(), String> {
+    let mut known_hosts = session
+        .known_hosts()
+        .map_err(|e| format!("Failed to init known hosts: {}", e))?;
+
+    let kh_path = dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("/"))
+        .join(".ssh/known_hosts");
+
+    if kh_path.exists() {
+        let _ = known_hosts.read_file(&kh_path, KnownHostFileKind::OpenSSH);
+    }
+
+    let (key, key_type) = session
+        .host_key()
+        .ok_or_else(|| "Server did not present a host key".to_string())?;
+
+    match known_hosts.check_port(host, port, key) {
+        CheckResult::Match => Ok(()),
+        CheckResult::Mismatch => Err(format!(
+            "HOST KEY MISMATCH for {}:{} — connection refused. \
+             If the server was reinstalled, remove the old entry from ~/.ssh/known_hosts.",
+            host, port
+        )),
+        CheckResult::NotFound => {
+            // Trust on first use: add the key to known_hosts
+            let host_entry = if port == 22 {
+                host.to_string()
+            } else {
+                format!("[{}]:{}", host, port)
+            };
+            let _ = known_hosts.add(&host_entry, key, "", key_type.into());
+            let _ = known_hosts.write_file(&kh_path, KnownHostFileKind::OpenSSH);
+            Ok(())
+        }
+        CheckResult::Failure => Err("Host key verification failed".to_string()),
     }
 }
 

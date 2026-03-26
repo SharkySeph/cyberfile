@@ -1,30 +1,63 @@
-use eframe::egui::{self, Color32, RichText, ScrollArea, Stroke, TextEdit};
+use eframe::egui::{self, RichText, ScrollArea, Stroke, TextEdit};
 
 use crate::app::CyberFile;
 use crate::integrations::services::ServiceAction;
 
 impl CyberFile {
     pub(crate) fn render_service_deck(&mut self, ctx: &egui::Context) {
-        let t = self.current_theme;
-        let mut open = self.service_deck_open;
+        if self.service_deck_detached {
+            let t = self.current_theme;
+            let viewport_id = egui::ViewportId::from_hash_of("service_deck_viewport");
+            let builder = egui::ViewportBuilder::default()
+                .with_title("CYBERFILE // SERVICE DECK")
+                .with_inner_size([740.0, 520.0])
+                .with_min_inner_size([400.0, 300.0]);
 
-        egui::Window::new(
-            RichText::new("┌─ SERVICE DECK ─┐")
-                .color(t.primary())
-                .monospace()
-                .strong(),
-        )
-        .open(&mut open)
-        .default_width(720.0)
-        .default_height(500.0)
-        .resizable(true)
-        .frame(
-            egui::Frame::new()
-                .fill(t.surface())
-                .inner_margin(egui::Margin::symmetric(10, 8))
-                .stroke(Stroke::new(1.0, t.border_dim())),
-        )
-        .show(ctx, |ui| {
+            ctx.show_viewport_immediate(viewport_id, builder, |ctx, _class| {
+                if ctx.input(|i| i.viewport().close_requested()) {
+                    self.service_deck_detached = false;
+                    self.service_deck_open = false;
+                }
+                egui::CentralPanel::default()
+                    .frame(
+                        egui::Frame::new()
+                            .fill(t.surface())
+                            .inner_margin(egui::Margin::symmetric(10, 8)),
+                    )
+                    .show(ctx, |ui| {
+                        self.render_service_deck_content(ui, true);
+                    });
+            });
+        } else {
+            let t = self.current_theme;
+            let mut open = self.service_deck_open;
+
+            egui::Window::new(
+                RichText::new("┌─ SERVICE DECK ─┐")
+                    .color(t.primary())
+                    .monospace()
+                    .strong(),
+            )
+            .open(&mut open)
+            .default_width(720.0)
+            .default_height(500.0)
+            .resizable(true)
+            .frame(
+                egui::Frame::new()
+                    .fill(t.surface())
+                    .inner_margin(egui::Margin::symmetric(10, 8))
+                    .stroke(Stroke::new(1.0, t.border_dim())),
+            )
+            .show(ctx, |ui| {
+                self.render_service_deck_content(ui, false);
+            });
+
+            self.service_deck_open = open;
+        }
+    }
+
+    fn render_service_deck_content(&mut self, ui: &mut egui::Ui, detached: bool) {
+        let t = self.current_theme;
             // ── Toolbar ────────────────────────────────────
             ui.horizontal(|ui| {
                 ui.label(
@@ -51,6 +84,18 @@ impl CyberFile {
                     .clicked()
                 {
                     self.refresh_service_deck(true);
+                }
+
+                ui.separator();
+
+                let detach_label = if detached { "⬡ ATTACH" } else { "⬡ DETACH" };
+                let detach_tip = if detached { "Dock back into main window" } else { "Open in separate window" };
+                if ui
+                    .button(RichText::new(detach_label).color(t.accent()).monospace().size(10.0))
+                    .on_hover_text(detach_tip)
+                    .clicked()
+                {
+                    self.service_deck_detached = !self.service_deck_detached;
                 }
             });
             ui.add_space(4.0);
@@ -258,8 +303,5 @@ impl CyberFile {
                         }
                     });
             }
-        });
-
-        self.service_deck_open = open;
     }
 }

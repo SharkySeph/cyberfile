@@ -79,7 +79,7 @@ Built with Rust and egui — CyberFile replaces the conventional desktop file ma
 ### Integrations
 
 - **Resource Monitor** (F3) — CPU, RAM, swap, disk with sparklines
-- **Music Widget** — MPRIS/playerctl playback controls in sidebar
+- **Music Widget** — MPRIS/playerctl playback controls in sidebar (player-targeted, relay-aware)
 - **Embedded Terminal** (F7) — Command runner with output display
 - **fzf** — Fuzzy file search (Ctrl+F)
 - **SFTP/SSH** (F9) — Remote file browsing via SSH key or password auth
@@ -92,6 +92,9 @@ Built with Rust and egui — CyberFile replaces the conventional desktop file ma
 - **Service Deck** (Ctrl+D) — `systemd --user` service management with start/stop/restart/enable/disable and status inspection
 - **Log Viewer** (Ctrl+J) — Multi-channel `journalctl` log viewer with saved watch channels
 - **Signal Deck** (Ctrl+Shift+D) — Audio controls, mic mute, volume mixer, clipboard history, notification history, battery/brightness/power profile
+- **Network Mesh** (Ctrl+Shift+N) — Interface status, Wi-Fi scanning, VPN tunnel control, live throughput sparklines (nmcli/NetworkManager)
+- **Device Bay** (Ctrl+Shift+B) — Block device browser with mount/unmount/eject for removable media (udisks2)
+- **Tactical Bridge** (Ctrl+Shift+W) — Window manager bridge for Hyprland, Sway, and i3 — list/focus/move/close windows, switch workspaces
 
 ### Operator Console Direction
 
@@ -102,7 +105,8 @@ CyberFile is moving toward a focused "mini DE inside your DE" model: a control d
 - **Process Matrix** — inspect and control running tasks from the HUD
 - **Service Deck** — user-service control and log viewing via `systemd --user`
 - **Signal Deck** — media, audio, mic, notifications, clipboard, power, brightness
-- **Network Mesh / Device Bay** — remote nodes, VPN/Wi-Fi state, removable media, mounts
+- **HUD Architect** — customizable sidebar layout: reorder, show, or hide any widget section via the settings panel (F1)
+- **Network Mesh / Device Bay / Tactical Bridge** — interface status, Wi-Fi/VPN control, removable media, WM window management
 
 ### Boot Sequence
 

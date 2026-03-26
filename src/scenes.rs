@@ -41,6 +41,12 @@ pub struct MissionSceneOverlayState {
     #[serde(default)]
     pub signal_deck_visible: bool,
     #[serde(default)]
+    pub network_mesh_visible: bool,
+    #[serde(default)]
+    pub device_bay_visible: bool,
+    #[serde(default)]
+    pub window_bridge_visible: bool,
+    #[serde(default)]
     pub data_rain_enabled: bool,
 }
 
@@ -370,6 +376,9 @@ pub fn default_pinned_scenes(root: &Path) -> Vec<MissionScene> {
                 service_deck_visible: false,
                 log_viewer_visible: false,
                 signal_deck_visible: false,
+                network_mesh_visible: false,
+                device_bay_visible: false,
+                window_bridge_visible: false,
                 data_rain_enabled: false,
             },
         ),
@@ -395,6 +404,9 @@ pub fn default_pinned_scenes(root: &Path) -> Vec<MissionScene> {
                 service_deck_visible: false,
                 log_viewer_visible: false,
                 signal_deck_visible: false,
+                network_mesh_visible: false,
+                device_bay_visible: false,
+                window_bridge_visible: false,
                 data_rain_enabled: false,
             },
         ),
@@ -420,6 +432,9 @@ pub fn default_pinned_scenes(root: &Path) -> Vec<MissionScene> {
                 service_deck_visible: false,
                 log_viewer_visible: false,
                 signal_deck_visible: false,
+                network_mesh_visible: false,
+                device_bay_visible: false,
+                window_bridge_visible: false,
                 data_rain_enabled: false,
             },
         ),
@@ -445,6 +460,9 @@ pub fn default_pinned_scenes(root: &Path) -> Vec<MissionScene> {
                 service_deck_visible: false,
                 log_viewer_visible: false,
                 signal_deck_visible: false,
+                network_mesh_visible: false,
+                device_bay_visible: false,
+                window_bridge_visible: false,
                 data_rain_enabled: false,
             },
         ),

@@ -264,7 +264,7 @@ pub fn copy_file(src: &Path, dest_dir: &Path) -> Result<PathBuf, std::io::Error>
     if metadata.file_type().is_symlink() {
         copy_symlink(src, &dest)?;
     } else if metadata.is_dir() {
-        copy_dir_recursive(src, &dest)?;
+        copy_dir_recursive(src, &dest, 0)?;
     } else {
         std::fs::copy(src, &dest)?;
     }
@@ -272,7 +272,15 @@ pub fn copy_file(src: &Path, dest_dir: &Path) -> Result<PathBuf, std::io::Error>
     Ok(dest)
 }
 
-fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<(), std::io::Error> {
+const MAX_COPY_DEPTH: u32 = 64;
+
+fn copy_dir_recursive(src: &Path, dest: &Path, depth: u32) -> Result<(), std::io::Error> {
+    if depth > MAX_COPY_DEPTH {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Maximum directory depth exceeded — possible symlink loop",
+        ));
+    }
     std::fs::create_dir_all(dest)?;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
@@ -282,7 +290,7 @@ fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<(), std::io::Error> {
         if file_type.is_symlink() {
             copy_symlink(&entry.path(), &dest_path)?;
         } else if file_type.is_dir() {
-            copy_dir_recursive(&entry.path(), &dest_path)?;
+            copy_dir_recursive(&entry.path(), &dest_path, depth + 1)?;
         } else {
             std::fs::copy(&entry.path(), &dest_path)?;
         }

@@ -8,6 +8,85 @@ use std::process::{Command, Stdio};
 use crate::integrations::journald::LogChannel;
 use crate::scenes::MissionScene;
 
+// ── Sidebar Layout ──────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum SidebarWidget {
+    QuickAccess,
+    NeuralLinks,
+    MissionScenes,
+    SystemStatus,
+    ContainmentZone,
+    NetRunner,
+    OperatorDeck,
+    MusicWidget,
+    NetworkMesh,
+    DeviceBay,
+    WindowBridge,
+}
+
+impl SidebarWidget {
+    /// Full ordered list of every widget (used as the default layout).
+    pub fn all() -> Vec<SidebarWidget> {
+        vec![
+            Self::QuickAccess,
+            Self::NeuralLinks,
+            Self::MissionScenes,
+            Self::SystemStatus,
+            Self::ContainmentZone,
+            Self::NetRunner,
+            Self::OperatorDeck,
+            Self::MusicWidget,
+            Self::NetworkMesh,
+            Self::DeviceBay,
+            Self::WindowBridge,
+        ]
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::QuickAccess => "QUICK ACCESS",
+            Self::NeuralLinks => "NEURAL LINKS",
+            Self::MissionScenes => "MISSION SCENES",
+            Self::SystemStatus => "SYSTEM STATUS",
+            Self::ContainmentZone => "CONTAINMENT ZONE",
+            Self::NetRunner => "NET RUNNER",
+            Self::OperatorDeck => "OPERATOR DECK",
+            Self::MusicWidget => "MUSIC WIDGET",
+            Self::NetworkMesh => "NETWORK MESH",
+            Self::DeviceBay => "DEVICE BAY",
+            Self::WindowBridge => "TACTICAL BRIDGE",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SidebarEntry {
+    pub widget: SidebarWidget,
+    pub visible: bool,
+}
+
+pub fn default_sidebar_layout() -> Vec<SidebarEntry> {
+    SidebarWidget::all()
+        .into_iter()
+        .map(|w| SidebarEntry { widget: w, visible: true })
+        .collect()
+}
+
+/// Ensure every known widget appears exactly once (handles config from older versions).
+pub fn normalize_sidebar_layout(layout: &mut Vec<SidebarEntry>) {
+    let all = SidebarWidget::all();
+    // Remove duplicates (keep first occurrence)
+    let mut seen = std::collections::HashSet::new();
+    layout.retain(|e| seen.insert(e.widget));
+    // Append any missing widgets at the end (visible by default)
+    for w in all {
+        if !layout.iter().any(|e| e.widget == w) {
+            layout.push(SidebarEntry { widget: w, visible: true });
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProtocolCommand {
     #[serde(default)]
@@ -41,6 +120,7 @@ pub struct LocalProtocolManifest {
     #[serde(default)]
     pub protocols: Vec<ProtocolCommand>,
     #[serde(default)]
+    #[allow(dead_code)]
     pub log_channels: Vec<LogChannel>,
 }
 
@@ -68,6 +148,9 @@ pub struct Settings {
     pub font_size: f32,
     #[serde(default = "default_sidebar_width")]
     pub sidebar_width: f32,
+    /// Ordered list of sidebar widgets with per-widget visibility.
+    #[serde(default = "default_sidebar_layout")]
+    pub sidebar_layout: Vec<SidebarEntry>,
     /// Overlay subtle CRT scanlines across the viewport.
     #[serde(default)]
     pub scanlines_enabled: bool,
@@ -162,6 +245,7 @@ impl Default for Settings {
             boot_sequence: true,
             font_size: default_font_size(),
             sidebar_width: default_sidebar_width(),
+            sidebar_layout: default_sidebar_layout(),
             scanlines_enabled: false,
             crt_effect: false,
             terminal_emulator: String::new(),
@@ -198,7 +282,8 @@ impl Settings {
         let path = Self::config_path();
         if path.exists() {
             if let Ok(content) = std::fs::read_to_string(&path) {
-                if let Ok(settings) = toml::from_str(&content) {
+                if let Ok(mut settings) = toml::from_str::<Settings>(&content) {
+                    normalize_sidebar_layout(&mut settings.sidebar_layout);
                     return settings;
                 }
             }

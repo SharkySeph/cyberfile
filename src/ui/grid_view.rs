@@ -429,6 +429,7 @@ impl CyberFile {
         if let Some(i) = context_index {
             self.selected = Some(i);
             self.context_menu_open = true;
+            self.context_menu_just_opened = true;
             self.context_menu_pos = ui.ctx().input(|inp| {
                 inp.pointer.interact_pos().unwrap_or(egui::pos2(100.0, 100.0))
             });
@@ -436,6 +437,7 @@ impl CyberFile {
         if blank_space_menu {
             self.selected = None;
             self.context_menu_open = true;
+            self.context_menu_just_opened = true;
             self.context_menu_pos = ui.ctx().input(|inp| {
                 inp.pointer.interact_pos().unwrap_or(egui::pos2(100.0, 100.0))
             });

@@ -485,6 +485,112 @@ impl CyberFile {
                     ui.add_space(6.0);
 
                     // ═══════════════════════════════════════
+                    // HUD ARCHITECT (Sidebar Layout)
+                    // ═══════════════════════════════════════
+                    Self::section_hex_header(ui, t, "HUD ARCHITECT", t.primary());
+                    ui.add_space(2.0);
+                    ui.label(
+                        RichText::new("  Reorder and toggle sidebar widgets")
+                            .color(t.text_dim())
+                            .monospace()
+                            .size(9.0),
+                    );
+                    ui.add_space(4.0);
+
+                    let layout_len = self.settings.sidebar_layout.len();
+                    let mut swap: Option<(usize, usize)> = None;
+                    let mut toggle_idx: Option<usize> = None;
+
+                    for i in 0..layout_len {
+                        let entry = &self.settings.sidebar_layout[i];
+                        let label = entry.widget.label();
+                        let vis = entry.visible;
+                        let vis_icon = if vis { "◉" } else { "○" };
+                        let vis_color = if vis { t.success() } else { t.text_dim() };
+                        let label_color = if vis { t.text_primary() } else { t.text_dim() };
+
+                        ui.horizontal(|ui| {
+                            // Move up
+                            let up_enabled = i > 0;
+                            if ui
+                                .add_enabled(
+                                    up_enabled,
+                                    egui::Button::new(
+                                        RichText::new("▲")
+                                            .color(if up_enabled { t.primary() } else { t.text_dim() })
+                                            .monospace()
+                                            .size(10.0),
+                                    ),
+                                )
+                                .clicked()
+                            {
+                                swap = Some((i, i - 1));
+                            }
+
+                            // Move down
+                            let down_enabled = i + 1 < layout_len;
+                            if ui
+                                .add_enabled(
+                                    down_enabled,
+                                    egui::Button::new(
+                                        RichText::new("▼")
+                                            .color(if down_enabled { t.primary() } else { t.text_dim() })
+                                            .monospace()
+                                            .size(10.0),
+                                    ),
+                                )
+                                .clicked()
+                            {
+                                swap = Some((i, i + 1));
+                            }
+
+                            // Visibility toggle
+                            if ui
+                                .button(
+                                    RichText::new(vis_icon)
+                                        .color(vis_color)
+                                        .monospace()
+                                        .size(11.0),
+                                )
+                                .on_hover_text(if vis { "Hide" } else { "Show" })
+                                .clicked()
+                            {
+                                toggle_idx = Some(i);
+                            }
+
+                            ui.label(
+                                RichText::new(label)
+                                    .color(label_color)
+                                    .monospace()
+                                    .size(10.0),
+                            );
+                        });
+                    }
+
+                    if let Some((a, b)) = swap {
+                        self.settings.sidebar_layout.swap(a, b);
+                    }
+                    if let Some(idx) = toggle_idx {
+                        self.settings.sidebar_layout[idx].visible =
+                            !self.settings.sidebar_layout[idx].visible;
+                    }
+
+                    ui.add_space(4.0);
+                    if ui
+                        .button(
+                            RichText::new("⟳ RESET DEFAULT LAYOUT")
+                                .color(t.primary_dim())
+                                .monospace()
+                                .size(10.0),
+                        )
+                        .clicked()
+                    {
+                        self.settings.sidebar_layout = crate::config::default_sidebar_layout();
+                    }
+
+                    ui.add_space(6.0);
+
+                    // ═══════════════════════════════════════
                     // STORAGE
                     // ═══════════════════════════════════════
                     Self::section_hex_header(ui, t, "STORAGE", t.text_dim());
@@ -577,6 +683,7 @@ impl CyberFile {
                             ("F1", "Configuration"),
                             ("F2", "Rename"),
                             ("F3", "Vital Signs"),
+                            ("F4", "Dual Jack (Split)"),
                             ("F5", "Refresh"),
                             ("F10", "Data Rain"),
                             ("F11", "Scanlines"),
@@ -585,11 +692,17 @@ impl CyberFile {
                             ("Ctrl+B", "Sidebar"),
                             ("Ctrl+F", "fzf Search"),
                             ("Ctrl+H", "Hidden Files"),
+                            ("Ctrl+K", "Protocol Launcher"),
+                            ("Ctrl+L", "Path / Navigate"),
                             ("Ctrl+P", "Preview Panel"),
                             ("Ctrl+T", "New Tab"),
                             ("Ctrl+W", "Close Tab"),
                             ("Ctrl+C/X/V", "Copy/Cut/Paste"),
                             ("Ctrl+Shift+N", "New Folder"),
+                            ("Ctrl+Shift+P", "Process Matrix"),
+                            ("Ctrl+D", "Service Deck"),
+                            ("Ctrl+J", "Log Viewer"),
+                            ("Ctrl+Shift+D", "Signal Deck"),
                             ("Backspace", "Go Up"),
                             ("Delete", "Quarantine"),
                         ];

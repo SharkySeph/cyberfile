@@ -1,4 +1,5 @@
 use eframe::egui::{self, Color32, RichText, Stroke};
+use std::collections::VecDeque;
 
 use crate::app::CyberFile;
 use crate::theme::{self, CyberTheme};
@@ -273,7 +274,7 @@ fn render_bar(pct: f32, width: usize) -> String {
     )
 }
 
-fn render_sparkline(data: &[f32]) -> String {
+fn render_sparkline(data: &VecDeque<f32>) -> String {
     let blocks = [
         '\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}',
         '\u{2588}',

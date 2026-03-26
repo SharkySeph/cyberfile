@@ -186,122 +186,207 @@ impl CyberFile {
         }
 
         // ── Neon Glow / Bloom ──────────────────────────────
-        // Draws subtle colored glow rectangles at screen edges in theme color
+        // Visible colored glow at screen edges with slow breathing pulse
         if self.neon_glow {
             let painter = ctx.layer_painter(egui::LayerId::new(
                 egui::Order::Foreground,
                 egui::Id::new("neon_glow"),
             ));
             let t = self.current_theme;
-            let glow_size = 40.0;
-            let steps = 8;
+            let glow_depth = 90.0;
+            let steps: usize = 12;
+            let step_size = glow_depth / steps as f32;
+
+            // Slow breathing pulse: oscillates between 0.6 and 1.0
+            let pulse = 0.8 + 0.2 * (self.frame_count as f32 * 0.015).sin();
+
+            let pc = t.primary();
+            let ac = t.accent();
 
             for i in 0..steps {
                 let frac = i as f32 / steps as f32;
-                let alpha = ((1.0 - frac) * 12.0) as u8;
-                let offset = frac * glow_size;
-                let pc = t.primary();
-                let ac = t.accent();
+                // Quadratic falloff for a softer glow ramp, peak alpha ~35
+                let base_alpha = (1.0 - frac) * (1.0 - frac) * 35.0 * pulse;
+                let offset = frac * glow_depth;
+
+                let pa = base_alpha.min(255.0).max(0.0) as u8;
+                // Scale RGB by alpha ratio for correct premultiplied blending
+                let pc_r = (pc.r() as f32 * pa as f32 / 255.0) as u8;
+                let pc_g = (pc.g() as f32 * pa as f32 / 255.0) as u8;
+                let pc_b = (pc.b() as f32 * pa as f32 / 255.0) as u8;
+                let ac_r = (ac.r() as f32 * pa as f32 / 255.0) as u8;
+                let ac_g = (ac.g() as f32 * pa as f32 / 255.0) as u8;
+                let ac_b = (ac.b() as f32 * pa as f32 / 255.0) as u8;
+
+                let pc_color = Color32::from_rgba_premultiplied(pc_r, pc_g, pc_b, pa);
+                let ac_color = Color32::from_rgba_premultiplied(ac_r, ac_g, ac_b, pa);
 
                 // Top glow (primary)
                 painter.rect_filled(
                     egui::Rect::from_min_max(
                         egui::pos2(screen.left(), screen.top() + offset),
-                        egui::pos2(screen.right(), screen.top() + offset + glow_size / steps as f32),
+                        egui::pos2(screen.right(), screen.top() + offset + step_size),
                     ),
                     0.0,
-                    Color32::from_rgba_premultiplied(pc.r(), pc.g(), pc.b(), alpha),
+                    pc_color,
                 );
                 // Bottom glow (accent)
                 painter.rect_filled(
                     egui::Rect::from_min_max(
-                        egui::pos2(screen.left(), screen.bottom() - offset - glow_size / steps as f32),
+                        egui::pos2(screen.left(), screen.bottom() - offset - step_size),
                         egui::pos2(screen.right(), screen.bottom() - offset),
                     ),
                     0.0,
-                    Color32::from_rgba_premultiplied(ac.r(), ac.g(), ac.b(), alpha),
+                    ac_color,
                 );
                 // Left glow (primary)
                 painter.rect_filled(
                     egui::Rect::from_min_max(
                         egui::pos2(screen.left() + offset, screen.top()),
-                        egui::pos2(screen.left() + offset + glow_size / steps as f32, screen.bottom()),
+                        egui::pos2(screen.left() + offset + step_size, screen.bottom()),
                     ),
                     0.0,
-                    Color32::from_rgba_premultiplied(pc.r(), pc.g(), pc.b(), alpha),
+                    pc_color,
                 );
                 // Right glow (accent)
                 painter.rect_filled(
                     egui::Rect::from_min_max(
-                        egui::pos2(screen.right() - offset - glow_size / steps as f32, screen.top()),
+                        egui::pos2(screen.right() - offset - step_size, screen.top()),
                         egui::pos2(screen.right() - offset, screen.bottom()),
                     ),
                     0.0,
-                    Color32::from_rgba_premultiplied(ac.r(), ac.g(), ac.b(), alpha),
+                    ac_color,
                 );
             }
+            ctx.request_repaint();
         }
 
         // ── Chromatic Aberration ────────────────────────────
-        // Subtle color-shifted bars that shift over time
+        // RGB channel separation that intensifies toward screen edges
         if self.chromatic_aberration {
             let painter = ctx.layer_painter(egui::LayerId::new(
                 egui::Order::Foreground,
                 egui::Id::new("chromatic_aberration"),
             ));
-            let time = self.frame_count as f32 * 0.02;
-            let bar_count = 5;
-            let bar_height = 1.0;
+            let time = self.frame_count as f32 * 0.008;
+            let edge_depth = 60.0;
 
-            for i in 0..bar_count {
-                let base_y = screen.top() + ((i as f32 * 173.7 + time * 20.0) % screen.height());
-                // Red channel shift (left)
+            // Persistent edge fringing — red shifts outward, blue shifts inward
+            let fringe_steps: usize = 10;
+            for i in 0..fringe_steps {
+                let frac = i as f32 / fringe_steps as f32;
+                let alpha = ((1.0 - frac) * (1.0 - frac) * 18.0) as u8;
+                if alpha == 0 { continue; }
+                let offset = frac * edge_depth;
+                let step_size = edge_depth / fringe_steps as f32;
+
+                // Red fringe pre-multiplied
+                let r_a = alpha;
+                let r_color = Color32::from_rgba_premultiplied(r_a, 0, 0, r_a);
+                // Blue fringe pre-multiplied
+                let b_color = Color32::from_rgba_premultiplied(0, 0, alpha, alpha);
+
+                // Left edge — red outside, blue inside
                 painter.rect_filled(
-                    egui::Rect::from_min_size(
-                        egui::pos2(screen.left() - 2.0, base_y),
-                        egui::vec2(screen.width(), bar_height),
+                    egui::Rect::from_min_max(
+                        egui::pos2(screen.left() + offset, screen.top()),
+                        egui::pos2(screen.left() + offset + step_size, screen.bottom()),
                     ),
                     0.0,
-                    Color32::from_rgba_premultiplied(255, 0, 0, 8),
+                    r_color,
                 );
-                // Blue channel shift (right)
+                // Right edge — blue outside, red inside
                 painter.rect_filled(
-                    egui::Rect::from_min_size(
-                        egui::pos2(screen.left() + 2.0, base_y + 1.0),
-                        egui::vec2(screen.width(), bar_height),
+                    egui::Rect::from_min_max(
+                        egui::pos2(screen.right() - offset - step_size, screen.top()),
+                        egui::pos2(screen.right() - offset, screen.bottom()),
                     ),
                     0.0,
-                    Color32::from_rgba_premultiplied(0, 0, 255, 8),
+                    b_color,
+                );
+                // Top edge — red fringe
+                painter.rect_filled(
+                    egui::Rect::from_min_max(
+                        egui::pos2(screen.left(), screen.top() + offset),
+                        egui::pos2(screen.right(), screen.top() + offset + step_size),
+                    ),
+                    0.0,
+                    r_color,
+                );
+                // Bottom edge — blue fringe
+                painter.rect_filled(
+                    egui::Rect::from_min_max(
+                        egui::pos2(screen.left(), screen.bottom() - offset - step_size),
+                        egui::pos2(screen.right(), screen.bottom() - offset),
+                    ),
+                    0.0,
+                    b_color,
+                );
+            }
+
+            // Slow-drifting horizontal interference lines across the screen
+            let line_count: usize = 8;
+            for i in 0..line_count {
+                let base_y = screen.top()
+                    + ((i as f32 * 137.3 + time * 12.0) % screen.height());
+                // Red shift left
+                painter.rect_filled(
+                    egui::Rect::from_min_size(
+                        egui::pos2(screen.left() - 1.5, base_y),
+                        egui::vec2(screen.width(), 1.0),
+                    ),
+                    0.0,
+                    Color32::from_rgba_premultiplied(10, 0, 0, 10),
+                );
+                // Blue shift right
+                painter.rect_filled(
+                    egui::Rect::from_min_size(
+                        egui::pos2(screen.left() + 1.5, base_y + 1.0),
+                        egui::vec2(screen.width(), 1.0),
+                    ),
+                    0.0,
+                    Color32::from_rgba_premultiplied(0, 0, 10, 10),
                 );
             }
             ctx.request_repaint();
         }
 
         // ── Holographic Noise ──────────────────────────────
-        // Animated noise grid of tiny colored cells
+        // Slow-shifting sparse noise grid — changes every ~8 frames to avoid flicker
         if self.holographic_noise {
             let painter = ctx.layer_painter(egui::LayerId::new(
                 egui::Order::Foreground,
                 egui::Id::new("holographic_noise"),
             ));
             let t = self.current_theme;
-            let cell_size = 24.0;
-            let frame = self.frame_count;
+            let cell_size = 28.0;
+            // Slow phase: only update the noise pattern every 8 frames
+            let phase = (self.frame_count / 8) as usize;
 
             let cols = (screen.width() / cell_size) as usize + 1;
             let rows = (screen.height() / cell_size) as usize + 1;
 
+            let pc = t.primary();
+            let ac = t.accent();
+
             for row in 0..rows {
                 for col in 0..cols {
-                    // Simple hash for pseudo-random appearance
-                    let hash = ((row * 131 + col * 97 + frame as usize * 37) % 256) as u8;
-                    // Only render sparse noise (low density)
-                    if hash > 12 {
+                    // Stable hash per phase — no per-frame flickering
+                    let hash = ((row.wrapping_mul(131))
+                        .wrapping_add(col.wrapping_mul(97))
+                        .wrapping_add(phase.wrapping_mul(37)))
+                        % 256;
+                    // Very sparse: only ~3% of cells are lit
+                    if hash > 7 {
                         continue;
                     }
-                    let pc = t.primary();
-                    let alpha = (hash % 6) + 3; // 3-8 alpha
-                    let color = Color32::from_rgba_premultiplied(pc.r(), pc.g(), pc.b(), alpha);
+                    // Alternate between primary and accent for color variety
+                    let base = if hash % 2 == 0 { pc } else { ac };
+                    let alpha = ((hash % 4) + 4) as u8; // alpha 4-7
+                    let r = (base.r() as f32 * alpha as f32 / 255.0) as u8;
+                    let g = (base.g() as f32 * alpha as f32 / 255.0) as u8;
+                    let b = (base.b() as f32 * alpha as f32 / 255.0) as u8;
+                    let color = Color32::from_rgba_premultiplied(r, g, b, alpha);
                     painter.rect_filled(
                         egui::Rect::from_min_size(
                             egui::pos2(
@@ -365,7 +450,7 @@ impl CyberFile {
                 egui::Order::Foreground,
                 egui::Id::new("high_contrast"),
             ));
-            // Strong border frame
+            // Strong white border frame as visual indicator
             let inset = 2.0;
             let frame = egui::Rect::from_min_max(
                 egui::pos2(screen.left() + inset, screen.top() + inset),
@@ -377,12 +462,54 @@ impl CyberFile {
                 Stroke::new(2.0, Color32::WHITE),
                 egui::StrokeKind::Outside,
             );
-            // Subtle bright overlay to boost readability
-            painter.rect_filled(
-                screen,
-                0.0,
-                Color32::from_rgba_premultiplied(255, 255, 255, 6),
-            );
+
+            // Darken edges to create contrast with content area
+            let edge_depth = 50.0;
+            let steps: usize = 8;
+            let step_size = edge_depth / steps as f32;
+            for i in 0..steps {
+                let frac = i as f32 / steps as f32;
+                let alpha = ((1.0 - frac) * (1.0 - frac) * 25.0) as u8;
+                if alpha == 0 { continue; }
+                let offset = frac * edge_depth;
+                let color = Color32::from_rgba_premultiplied(0, 0, 0, alpha);
+                // Top
+                painter.rect_filled(
+                    egui::Rect::from_min_max(
+                        egui::pos2(screen.left(), screen.top() + offset),
+                        egui::pos2(screen.right(), screen.top() + offset + step_size),
+                    ),
+                    0.0,
+                    color,
+                );
+                // Bottom
+                painter.rect_filled(
+                    egui::Rect::from_min_max(
+                        egui::pos2(screen.left(), screen.bottom() - offset - step_size),
+                        egui::pos2(screen.right(), screen.bottom() - offset),
+                    ),
+                    0.0,
+                    color,
+                );
+                // Left
+                painter.rect_filled(
+                    egui::Rect::from_min_max(
+                        egui::pos2(screen.left() + offset, screen.top()),
+                        egui::pos2(screen.left() + offset + step_size, screen.bottom()),
+                    ),
+                    0.0,
+                    color,
+                );
+                // Right
+                painter.rect_filled(
+                    egui::Rect::from_min_max(
+                        egui::pos2(screen.right() - offset - step_size, screen.top()),
+                        egui::pos2(screen.right() - offset, screen.bottom()),
+                    ),
+                    0.0,
+                    color,
+                );
+            }
         }
     }
 }

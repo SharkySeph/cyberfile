@@ -1,29 +1,62 @@
-use eframe::egui::{self, RichText, ScrollArea, Stroke, TextEdit};
+use eframe::egui::{self, RichText, ScrollArea, Stroke};
 
 use crate::app::CyberFile;
 
 impl CyberFile {
     pub(crate) fn render_log_viewer(&mut self, ctx: &egui::Context) {
-        let t = self.current_theme;
-        let mut open = self.log_viewer_open;
+        if self.log_viewer_detached {
+            let t = self.current_theme;
+            let viewport_id = egui::ViewportId::from_hash_of("log_viewer_viewport");
+            let builder = egui::ViewportBuilder::default()
+                .with_title("CYBERFILE // LOG VIEWER")
+                .with_inner_size([720.0, 440.0])
+                .with_min_inner_size([400.0, 300.0]);
 
-        egui::Window::new(
-            RichText::new("┌─ LOG VIEWER ─┐")
-                .color(t.primary())
-                .monospace()
-                .strong(),
-        )
-        .open(&mut open)
-        .default_width(700.0)
-        .default_height(420.0)
-        .resizable(true)
-        .frame(
-            egui::Frame::new()
-                .fill(t.surface())
-                .inner_margin(egui::Margin::symmetric(10, 8))
-                .stroke(Stroke::new(1.0, t.border_dim())),
-        )
-        .show(ctx, |ui| {
+            ctx.show_viewport_immediate(viewport_id, builder, |ctx, _class| {
+                if ctx.input(|i| i.viewport().close_requested()) {
+                    self.log_viewer_detached = false;
+                    self.log_viewer_open = false;
+                }
+                egui::CentralPanel::default()
+                    .frame(
+                        egui::Frame::new()
+                            .fill(t.surface())
+                            .inner_margin(egui::Margin::symmetric(10, 8)),
+                    )
+                    .show(ctx, |ui| {
+                        self.render_log_viewer_content(ui, true);
+                    });
+            });
+        } else {
+            let t = self.current_theme;
+            let mut open = self.log_viewer_open;
+
+            egui::Window::new(
+                RichText::new("┌─ LOG VIEWER ─┐")
+                    .color(t.primary())
+                    .monospace()
+                    .strong(),
+            )
+            .open(&mut open)
+            .default_width(700.0)
+            .default_height(420.0)
+            .resizable(true)
+            .frame(
+                egui::Frame::new()
+                    .fill(t.surface())
+                    .inner_margin(egui::Margin::symmetric(10, 8))
+                    .stroke(Stroke::new(1.0, t.border_dim())),
+            )
+            .show(ctx, |ui| {
+                self.render_log_viewer_content(ui, false);
+            });
+
+            self.log_viewer_open = open;
+        }
+    }
+
+    fn render_log_viewer_content(&mut self, ui: &mut egui::Ui, detached: bool) {
+        let t = self.current_theme;
             // ── Channel Selector ───────────────────────────
             ui.horizontal(|ui| {
                 ui.label(
@@ -63,6 +96,18 @@ impl CyberFile {
                     .clicked()
                 {
                     self.refresh_log_viewer(true);
+                }
+
+                ui.separator();
+
+                let detach_label = if detached { "⬡ ATTACH" } else { "⬡ DETACH" };
+                let detach_tip = if detached { "Dock back into main window" } else { "Open in separate window" };
+                if ui
+                    .button(RichText::new(detach_label).color(t.accent()).monospace().size(10.0))
+                    .on_hover_text(detach_tip)
+                    .clicked()
+                {
+                    self.log_viewer_detached = !self.log_viewer_detached;
                 }
             });
             ui.add_space(2.0);
@@ -119,8 +164,5 @@ impl CyberFile {
                     );
                 });
             });
-        });
-
-        self.log_viewer_open = open;
     }
 }

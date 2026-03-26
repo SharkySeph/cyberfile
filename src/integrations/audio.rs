@@ -1,8 +1,10 @@
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 
 // ── Audio Sink/Source Types ────────────────────────────────
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct AudioSink {
     pub id: u32,
     pub name: String,
@@ -13,6 +15,7 @@ pub struct AudioSink {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct AudioSource {
     pub id: u32,
     pub name: String,
@@ -23,6 +26,7 @@ pub struct AudioSource {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct AudioStream {
     pub id: u32,
     pub app_name: String,
@@ -44,7 +48,7 @@ pub struct AudioSnapshot {
     pub backend: AudioBackend,
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum AudioBackend {
     Pipewire,
     Pulseaudio,
@@ -54,7 +58,13 @@ pub enum AudioBackend {
 
 // ── Detection ──────────────────────────────────────────────
 
+static AUDIO_BACKEND: OnceLock<AudioBackend> = OnceLock::new();
+
 pub fn detect_audio_backend() -> AudioBackend {
+    *AUDIO_BACKEND.get_or_init(detect_audio_backend_impl)
+}
+
+fn detect_audio_backend_impl() -> AudioBackend {
     if Command::new("wpctl").arg("--version").output().is_ok() {
         if let Ok(output) = Command::new("wpctl").arg("status").output() {
             if output.status.success() {
@@ -115,19 +125,22 @@ fn collect_pipewire_snapshot() -> AudioSnapshot {
         .args(["--format=json", "list", "sinks"])
         .output()
     {
-        parse_pactl_sinks(&String::from_utf8_lossy(&output.stdout), &mut snap);
+        let expanded = expand_json(&String::from_utf8_lossy(&output.stdout));
+        parse_pactl_sinks(&expanded, &mut snap);
     }
     if let Ok(output) = Command::new("pactl")
         .args(["--format=json", "list", "sources"])
         .output()
     {
-        parse_pactl_sources(&String::from_utf8_lossy(&output.stdout), &mut snap);
+        let expanded = expand_json(&String::from_utf8_lossy(&output.stdout));
+        parse_pactl_sources(&expanded, &mut snap);
     }
     if let Ok(output) = Command::new("pactl")
         .args(["--format=json", "list", "sink-inputs"])
         .output()
     {
-        parse_pactl_streams(&String::from_utf8_lossy(&output.stdout), &mut snap);
+        let expanded = expand_json(&String::from_utf8_lossy(&output.stdout));
+        parse_pactl_streams(&expanded, &mut snap);
     }
 
     snap
@@ -143,19 +156,22 @@ fn collect_pulse_snapshot() -> AudioSnapshot {
         .args(["--format=json", "list", "sinks"])
         .output()
     {
-        parse_pactl_sinks(&String::from_utf8_lossy(&output.stdout), &mut snap);
+        let expanded = expand_json(&String::from_utf8_lossy(&output.stdout));
+        parse_pactl_sinks(&expanded, &mut snap);
     }
     if let Ok(output) = Command::new("pactl")
         .args(["--format=json", "list", "sources"])
         .output()
     {
-        parse_pactl_sources(&String::from_utf8_lossy(&output.stdout), &mut snap);
+        let expanded = expand_json(&String::from_utf8_lossy(&output.stdout));
+        parse_pactl_sources(&expanded, &mut snap);
     }
     if let Ok(output) = Command::new("pactl")
         .args(["--format=json", "list", "sink-inputs"])
         .output()
     {
-        parse_pactl_streams(&String::from_utf8_lossy(&output.stdout), &mut snap);
+        let expanded = expand_json(&String::from_utf8_lossy(&output.stdout));
+        parse_pactl_streams(&expanded, &mut snap);
     }
 
     // Default volumes from first default sink/source
@@ -210,12 +226,16 @@ fn parse_pactl_sinks(json: &str, snap: &mut AudioSnapshot) {
             current_muted = false;
             current_default = false;
         }
-        if let Some(val) = extract_json_str(trimmed, "\"name\"") {
-            current_default = val == default_sink;
-            current_name = val;
+        if current_name.is_empty() {
+            if let Some(val) = extract_json_str(trimmed, "\"name\"") {
+                current_default = val == default_sink;
+                current_name = val;
+            }
         }
-        if let Some(val) = extract_json_str(trimmed, "\"description\"") {
-            current_desc = val;
+        if current_desc.is_empty() {
+            if let Some(val) = extract_json_str(trimmed, "\"description\"") {
+                current_desc = val;
+            }
         }
         if let Some(val) = extract_json_str(trimmed, "\"value_percent\"") {
             if current_vol == 0 {
@@ -273,12 +293,16 @@ fn parse_pactl_sources(json: &str, snap: &mut AudioSnapshot) {
             current_muted = false;
             current_default = false;
         }
-        if let Some(val) = extract_json_str(trimmed, "\"name\"") {
-            current_default = val == default_source;
-            current_name = val;
+        if current_name.is_empty() {
+            if let Some(val) = extract_json_str(trimmed, "\"name\"") {
+                current_default = val == default_source;
+                current_name = val;
+            }
         }
-        if let Some(val) = extract_json_str(trimmed, "\"description\"") {
-            current_desc = val;
+        if current_desc.is_empty() {
+            if let Some(val) = extract_json_str(trimmed, "\"description\"") {
+                current_desc = val;
+            }
         }
         if let Some(val) = extract_json_str(trimmed, "\"value_percent\"") {
             if current_vol == 0 {
@@ -423,6 +447,7 @@ pub fn set_default_sink(name: &str) {
     }
 }
 
+#[allow(dead_code)]
 pub fn set_stream_volume(stream_id: u32, percent: u32) {
     let vol = format!("{}%", percent.min(150));
     let _ = Command::new("pactl")
@@ -514,6 +539,47 @@ pub fn get_brightness_percent() -> Option<u32> {
 pub fn set_brightness_percent(percent: u32) {
     let val = format!("{}%", percent.min(100));
     let _ = Command::new("brightnessctl").args(["set", &val]).output();
+}
+
+// ── Idle Inhibit ───────────────────────────────────────────
+
+/// Check whether idle/sleep inhibit is currently active.
+/// Looks for any existing inhibitor locks via `systemd-inhibit --list`.
+#[allow(dead_code)]
+pub fn is_idle_inhibited() -> bool {
+    // Check if our own inhibitor process is still alive
+    // We use a sentinel approach: look for our inhibitor in the list
+    Command::new("systemd-inhibit")
+        .args(["--list", "--no-pager"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).contains("cyberfile"))
+        .unwrap_or(false)
+}
+
+/// Start an idle inhibitor. Returns the child process handle.
+/// The inhibitor stays active as long as the process is alive.
+pub fn start_idle_inhibit() -> Option<std::process::Child> {
+    Command::new("systemd-inhibit")
+        .args([
+            "--what=idle",
+            "--who=cyberfile",
+            "--why=User requested idle inhibit",
+            "--mode=block",
+            "sleep",
+            "infinity",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()
+}
+
+/// Stop an idle inhibitor by killing the child process.
+pub fn stop_idle_inhibit(child: &mut std::process::Child) {
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 // ── Clipboard History ──────────────────────────────────────
@@ -760,6 +826,45 @@ pub fn clear_all_notifications() {
 }
 
 // ── Tiny JSON Helpers (no serde_json dep) ──────────────────
+
+/// Expand minified JSON so each key-value sits on its own line.
+/// The line-based extractors below rely on one key per line.
+fn expand_json(json: &str) -> String {
+    let mut out = String::with_capacity(json.len() * 2);
+    let mut in_string = false;
+    let mut prev = '\0';
+    for ch in json.chars() {
+        if ch == '"' && prev != '\\' {
+            in_string = !in_string;
+        }
+        if !in_string {
+            match ch {
+                '{' | '[' => {
+                    out.push(ch);
+                    out.push('\n');
+                    prev = ch;
+                    continue;
+                }
+                '}' | ']' => {
+                    out.push('\n');
+                    out.push(ch);
+                    prev = ch;
+                    continue;
+                }
+                ',' => {
+                    out.push(ch);
+                    out.push('\n');
+                    prev = ch;
+                    continue;
+                }
+                _ => {}
+            }
+        }
+        out.push(ch);
+        prev = ch;
+    }
+    out
+}
 
 fn extract_json_str(line: &str, key: &str) -> Option<String> {
     let pos = line.find(key)?;

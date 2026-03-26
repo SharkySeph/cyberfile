@@ -70,6 +70,9 @@ pub enum LauncherAction {
         run_in_terminal: bool,
     },
     OpenPath(PathBuf),
+    OpenNetworkMesh,
+    OpenDeviceBay,
+    OpenWindowBridge,
 }
 
 #[derive(Debug, Clone)]
@@ -201,6 +204,30 @@ pub fn builtin_entries(
             "NET",
             &["remote", "sftp", "ssh", "uplink", "connect"],
             LauncherAction::OpenSftpDialog,
+        ),
+        LauncherEntry::new(
+            "protocol.open_network_mesh",
+            "OPEN NETWORK MESH",
+            "View interfaces, Wi-Fi, VPN tunnels, and throughput",
+            "NET",
+            &["network", "mesh", "wifi", "vpn", "interfaces", "throughput"],
+            LauncherAction::OpenNetworkMesh,
+        ),
+        LauncherEntry::new(
+            "protocol.open_device_bay",
+            "OPEN DEVICE BAY",
+            "Manage block devices, removable media, mount/eject",
+            "DEVICES",
+            &["device", "bay", "disk", "usb", "mount", "eject", "removable"],
+            LauncherAction::OpenDeviceBay,
+        ),
+        LauncherEntry::new(
+            "protocol.open_window_bridge",
+            "OPEN TACTICAL BRIDGE",
+            "Window manager bridge — list, focus, move windows across workspaces",
+            "WM",
+            &["window", "bridge", "tactical", "wm", "hyprland", "sway", "i3", "workspace"],
+            LauncherAction::OpenWindowBridge,
         ),
     ];
 
@@ -480,7 +507,15 @@ pub fn load_local_protocol_manifest(current_path: &Path) -> Option<LoadedProtoco
         current_path.parent()?
     };
 
+    let home = dirs::home_dir();
     for dir in start_dir.ancestors() {
+        // Don't walk above the user's home directory to prevent loading
+        // untrusted .cyberfile.toml from system paths like / or /home
+        if let Some(ref home_path) = home {
+            if !dir.starts_with(home_path) {
+                break;
+            }
+        }
         let candidate = dir.join(".cyberfile.toml");
         if !candidate.is_file() {
             continue;

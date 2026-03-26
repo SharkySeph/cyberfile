@@ -1,33 +1,68 @@
 use eframe::egui::{self, RichText, ScrollArea, Stroke};
 
 use crate::app::{CyberFile, SignalDeckTab};
+use crate::integrations::media;
 
 impl CyberFile {
     pub(crate) fn render_signal_deck(&mut self, ctx: &egui::Context) {
-        let t = self.current_theme;
-        let mut open = self.signal_deck_open;
+        if self.signal_deck_detached {
+            let t = self.current_theme;
+            let viewport_id = egui::ViewportId::from_hash_of("signal_deck_viewport");
+            let builder = egui::ViewportBuilder::default()
+                .with_title("CYBERFILE // SIGNAL DECK")
+                .with_inner_size([660.0, 480.0])
+                .with_min_inner_size([400.0, 300.0]);
 
-        egui::Window::new(
-            RichText::new("┌─ SIGNAL DECK ─┐")
-                .color(t.primary())
-                .monospace()
-                .strong(),
-        )
-        .open(&mut open)
-        .default_width(640.0)
-        .default_height(460.0)
-        .resizable(true)
-        .frame(
-            egui::Frame::new()
-                .fill(t.surface())
-                .inner_margin(egui::Margin::symmetric(10, 8))
-                .stroke(Stroke::new(1.0, t.border_dim())),
-        )
-        .show(ctx, |ui| {
-            // ── Tab Selector ───────────────────────────────
+            ctx.show_viewport_immediate(viewport_id, builder, |ctx, _class| {
+                if ctx.input(|i| i.viewport().close_requested()) {
+                    self.signal_deck_detached = false;
+                    self.signal_deck_open = false;
+                }
+                egui::CentralPanel::default()
+                    .frame(
+                        egui::Frame::new()
+                            .fill(t.surface())
+                            .inner_margin(egui::Margin::symmetric(10, 8)),
+                    )
+                    .show(ctx, |ui| {
+                        self.render_signal_deck_content(ui, true);
+                    });
+            });
+        } else {
+            let t = self.current_theme;
+            let mut open = self.signal_deck_open;
+
+            egui::Window::new(
+                RichText::new("┌─ SIGNAL DECK ─┐")
+                    .color(t.primary())
+                    .monospace()
+                    .strong(),
+            )
+            .open(&mut open)
+            .default_width(640.0)
+            .default_height(460.0)
+            .resizable(true)
+            .frame(
+                egui::Frame::new()
+                    .fill(t.surface())
+                    .inner_margin(egui::Margin::symmetric(10, 8))
+                    .stroke(Stroke::new(1.0, t.border_dim())),
+            )
+            .show(ctx, |ui| {
+                self.render_signal_deck_content(ui, false);
+            });
+
+            self.signal_deck_open = open;
+        }
+    }
+
+    fn render_signal_deck_content(&mut self, ui: &mut egui::Ui, detached: bool) {
+        let t = self.current_theme;
+        // ── Tab Selector ───────────────────────────────
             ui.horizontal(|ui| {
                 let tabs = [
                     (SignalDeckTab::Audio, "♫ AUDIO"),
+                    (SignalDeckTab::Media, "▶ MEDIA"),
                     (SignalDeckTab::Clipboard, "◫ CLIPBOARD"),
                     (SignalDeckTab::Notifications, "⚡ ALERTS"),
                     (SignalDeckTab::Power, "⏻ POWER"),
@@ -42,18 +77,28 @@ impl CyberFile {
                         self.signal_deck_tab = tab;
                     }
                 }
+
+                ui.separator();
+
+                let detach_label = if detached { "⬡ ATTACH" } else { "⬡ DETACH" };
+                let detach_tip = if detached { "Dock back into main window" } else { "Open in separate window" };
+                if ui
+                    .button(RichText::new(detach_label).color(t.accent()).monospace().size(10.0))
+                    .on_hover_text(detach_tip)
+                    .clicked()
+                {
+                    self.signal_deck_detached = !self.signal_deck_detached;
+                }
             });
             ui.add_space(6.0);
 
             match self.signal_deck_tab {
                 SignalDeckTab::Audio => self.render_signal_audio(ui),
+                SignalDeckTab::Media => self.render_signal_media(ui),
                 SignalDeckTab::Clipboard => self.render_signal_clipboard(ui),
                 SignalDeckTab::Notifications => self.render_signal_notifications(ui),
                 SignalDeckTab::Power => self.render_signal_power(ui),
             }
-        });
-
-        self.signal_deck_open = open;
     }
 
     // ── Audio Tab ──────────────────────────────────────────
@@ -249,6 +294,237 @@ impl CyberFile {
                 });
             }
         }
+    }
+
+    // ── Media Tab ──────────────────────────────────────────
+
+    fn render_signal_media(&mut self, ui: &mut egui::Ui) {
+        let t = self.current_theme;
+
+        // Refresh player list periodically
+        if self.media_players_last_refresh.elapsed().as_secs() >= 5 {
+            self.media_players = media::list_players();
+            self.media_players_last_refresh = std::time::Instant::now();
+        }
+
+        // Refresh media state (more frequently for position tracking)
+        if self.media_last_refresh.elapsed().as_millis() >= 1000 {
+            self.media_state = media::get_state_for_player(&self.media_preferred_player);
+            self.media_last_refresh = std::time::Instant::now();
+        }
+
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new("⟐ MEDIA BUS")
+                    .color(t.text_dim())
+                    .monospace()
+                    .size(10.0),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui
+                    .button(
+                        RichText::new("⟳ REFRESH")
+                            .color(t.accent())
+                            .monospace()
+                            .size(10.0),
+                    )
+                    .clicked()
+                {
+                    self.media_players = media::list_players();
+                    self.media_players_last_refresh = std::time::Instant::now();
+                    self.media_state = media::get_state_for_player(&self.media_preferred_player);
+                    self.media_last_refresh = std::time::Instant::now();
+                }
+            });
+        });
+        ui.add_space(4.0);
+
+        // ── Player Selector ────────────────────────────────
+        if !self.media_players.is_empty() {
+            ui.label(
+                RichText::new("── ACTIVE PLAYERS ──")
+                    .color(t.primary())
+                    .monospace()
+                    .size(10.0)
+                    .strong(),
+            );
+            ui.add_space(2.0);
+
+            let players = self.media_players.clone();
+            for p in &players {
+                let is_selected = self.media_preferred_player == p.id
+                    || (self.media_preferred_player.is_empty()
+                        && self.media_state.player_id == p.id);
+                let icon = if is_selected { "◉" } else { "○" };
+                let status_color = match p.status.as_str() {
+                    "Playing" => t.success(),
+                    "Paused" => t.warning(),
+                    _ => t.text_dim(),
+                };
+                let name_color = if is_selected { t.accent() } else { t.text_primary() };
+
+                ui.horizontal(|ui| {
+                    if ui
+                        .button(
+                            RichText::new(format!(
+                                "{} {} [{}]",
+                                icon, p.display_name, p.status
+                            ))
+                            .color(name_color)
+                            .monospace()
+                            .size(10.0),
+                        )
+                        .clicked()
+                    {
+                        self.media_preferred_player = p.id.clone();
+                        self.media_state = media::get_state_for_player(&p.id);
+                        self.media_last_refresh = std::time::Instant::now();
+                    }
+                    let _ = status_color;
+                });
+            }
+            ui.add_space(6.0);
+        } else {
+            ui.label(
+                RichText::new("  No MPRIS players detected.\n  Start a media player (Spotify, Firefox, VLC, mpv, etc.)")
+                    .color(t.text_dim())
+                    .monospace()
+                    .size(11.0),
+            );
+            return;
+        }
+
+        // ── Now Playing ────────────────────────────────────
+        let state = &self.media_state;
+        if !state.available {
+            ui.label(
+                RichText::new("  No active playback")
+                    .color(t.text_dim())
+                    .monospace()
+                    .size(11.0),
+            );
+            return;
+        }
+
+        ui.label(
+            RichText::new("── NOW PLAYING ──")
+                .color(t.primary())
+                .monospace()
+                .size(10.0)
+                .strong(),
+        );
+        ui.add_space(2.0);
+
+        let status_label = if state.playing { "▶ STREAMING" } else { "⏸ PAUSED" };
+        let status_color = if state.playing { t.success() } else { t.warning() };
+
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(format!("♫ {} FEED", state.player_name))
+                    .color(t.primary())
+                    .monospace()
+                    .size(11.0)
+                    .strong(),
+            );
+            ui.label(
+                RichText::new(status_label)
+                    .color(status_color)
+                    .monospace()
+                    .size(10.0),
+            );
+        });
+        ui.add_space(2.0);
+
+        if !state.title.is_empty() {
+            ui.label(
+                RichText::new(truncate_str(&state.title, 50))
+                    .color(t.text_primary())
+                    .monospace()
+                    .size(12.0)
+                    .strong(),
+            );
+        }
+        if !state.artist.is_empty() {
+            ui.label(
+                RichText::new(truncate_str(&state.artist, 50))
+                    .color(t.accent())
+                    .monospace()
+                    .size(11.0),
+            );
+        }
+        if !state.album.is_empty() {
+            ui.label(
+                RichText::new(truncate_str(&state.album, 50))
+                    .color(t.text_dim())
+                    .monospace()
+                    .size(10.0),
+            );
+        }
+        ui.add_space(4.0);
+
+        // ── Progress Bar / Seek ────────────────────────────
+        let duration = state.duration_secs;
+        let position = state.position_secs;
+        let player_id = state.player_id.clone();
+
+        if duration > 0.0 {
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(format_time(position))
+                        .color(t.text_dim())
+                        .monospace()
+                        .size(10.0),
+                );
+
+                let bar_width = ui.available_width() - 60.0;
+                let mut pos_frac = (position / duration).clamp(0.0, 1.0) as f32;
+                let slider = egui::Slider::new(&mut pos_frac, 0.0..=1.0)
+                    .show_value(false)
+                    .custom_formatter(|_, _| String::new());
+                let response = ui.add_sized([bar_width.max(80.0), 14.0], slider);
+                if response.changed() {
+                    let new_pos = pos_frac as f64 * duration;
+                    media::seek_to(&player_id, new_pos);
+                }
+
+                ui.label(
+                    RichText::new(format_time(duration))
+                        .color(t.text_dim())
+                        .monospace()
+                        .size(10.0),
+                );
+            });
+            ui.add_space(4.0);
+        }
+
+        // ── Transport Controls ─────────────────────────────
+        ui.horizontal(|ui| {
+            let btn_size = 16.0;
+            if ui
+                .button(RichText::new("⏮").color(t.primary()).monospace().size(btn_size))
+                .on_hover_text("Previous track")
+                .clicked()
+            {
+                media::previous_track_player(&player_id);
+            }
+
+            let play_icon = if state.playing { "⏸" } else { "▶" };
+            if ui
+                .button(RichText::new(play_icon).color(t.success()).monospace().size(btn_size))
+                .on_hover_text("Play / Pause")
+                .clicked()
+            {
+                media::play_pause_player(&player_id);
+            }
+
+            if ui
+                .button(RichText::new("⏭").color(t.primary()).monospace().size(btn_size))
+                .on_hover_text("Next track")
+                .clicked()
+            {
+                media::next_track_player(&player_id);
+            }
+        });
     }
 
     // ── Clipboard Tab ──────────────────────────────────────
@@ -546,6 +822,49 @@ impl CyberFile {
                 }
             });
         }
+
+        ui.add_space(8.0);
+
+        // ── Idle Inhibit ───────────────────────────────────
+        let is_inhibited = self.idle_inhibit_child.is_some();
+        let inhibit_icon = if is_inhibited { "☕" } else { "💤" };
+        let inhibit_label = if is_inhibited {
+            "IDLE INHIBIT: ACTIVE"
+        } else {
+            "IDLE INHIBIT: OFF"
+        };
+        let inhibit_color = if is_inhibited { t.warning() } else { t.text_dim() };
+
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(format!("{} {}", inhibit_icon, inhibit_label))
+                    .color(inhibit_color)
+                    .monospace()
+                    .size(11.0),
+            );
+
+            let btn_label = if is_inhibited { "DISABLE" } else { "ENABLE" };
+            let btn_color = if is_inhibited { t.danger() } else { t.accent() };
+            if ui
+                .button(
+                    RichText::new(btn_label)
+                        .color(btn_color)
+                        .monospace()
+                        .size(10.0),
+                )
+                .on_hover_text("Prevent system from going to sleep/idle")
+                .clicked()
+            {
+                if is_inhibited {
+                    if let Some(ref mut child) = self.idle_inhibit_child {
+                        crate::integrations::audio::stop_idle_inhibit(child);
+                    }
+                    self.idle_inhibit_child = None;
+                } else {
+                    self.idle_inhibit_child = crate::integrations::audio::start_idle_inhibit();
+                }
+            }
+        });
     }
 }
 
@@ -555,4 +874,11 @@ fn truncate_str(s: &str, max: usize) -> String {
     } else {
         format!("{}…", &s[..max.saturating_sub(1)])
     }
+}
+
+fn format_time(secs: f64) -> String {
+    let total = secs as u64;
+    let m = total / 60;
+    let s = total % 60;
+    format!("{:02}:{:02}", m, s)
 }
