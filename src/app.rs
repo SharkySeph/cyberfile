@@ -765,16 +765,19 @@ impl CyberFile {
 
     pub(crate) fn open_process_matrix(&mut self) {
         self.process_matrix_open = true;
+        self.process_matrix_detached = true;
         self.refresh_process_matrix(true);
     }
 
     pub(crate) fn open_service_deck(&mut self) {
         self.service_deck_open = true;
+        self.service_deck_detached = true;
         self.refresh_service_deck(true);
     }
 
     pub(crate) fn open_log_viewer(&mut self) {
         self.log_viewer_open = true;
+        self.log_viewer_detached = true;
         self.refresh_log_viewer(true);
     }
 
@@ -972,6 +975,7 @@ impl CyberFile {
 
     pub(crate) fn open_signal_deck(&mut self) {
         self.signal_deck_open = true;
+        self.signal_deck_detached = true;
         self.refresh_audio_snapshot(true);
         self.refresh_power_info(true);
         self.refresh_clipboard(true);
@@ -1016,6 +1020,7 @@ impl CyberFile {
 
     pub(crate) fn open_network_mesh(&mut self) {
         self.network_mesh_open = true;
+        self.network_mesh_detached = true;
         self.refresh_network_mesh(true);
     }
 
@@ -1058,6 +1063,7 @@ impl CyberFile {
 
     pub(crate) fn open_device_bay(&mut self) {
         self.device_bay_open = true;
+        self.device_bay_detached = true;
         self.refresh_device_bay(true);
     }
 
@@ -1073,6 +1079,7 @@ impl CyberFile {
 
     pub(crate) fn open_window_bridge(&mut self) {
         self.window_bridge_open = true;
+        self.window_bridge_detached = true;
         self.refresh_window_bridge(true);
     }
 

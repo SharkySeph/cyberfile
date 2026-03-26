@@ -100,7 +100,12 @@ impl CyberFile {
 
         let Some(backend) = self.wm_backend else {
             ui.label(
-                RichText::new("⚠ No supported WM detected (Hyprland / Sway / i3)")
+                RichText::new("⚠ No supported WM detected")
+                    .color(t.warning())
+                    .monospace(),
+            );
+            ui.label(
+                RichText::new("Supported: Hyprland / Sway / i3 / KDE KWin / X11 (EWMH)")
                     .color(t.text_dim())
                     .monospace(),
             );

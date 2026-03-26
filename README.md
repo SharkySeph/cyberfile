@@ -94,7 +94,7 @@ Built with Rust and egui — CyberFile replaces the conventional desktop file ma
 - **Signal Deck** (Ctrl+Shift+D) — Audio controls, mic mute, volume mixer, clipboard history, notification history, battery/brightness/power profile
 - **Network Mesh** (Ctrl+Shift+N) — Interface status, Wi-Fi scanning, VPN tunnel control, live throughput sparklines (nmcli/NetworkManager)
 - **Device Bay** (Ctrl+Shift+B) — Block device browser with mount/unmount/eject for removable media (udisks2)
-- **Tactical Bridge** (Ctrl+Shift+W) — Window manager bridge for Hyprland, Sway, and i3 — list/focus/move/close windows, switch workspaces
+- **Tactical Bridge** (Ctrl+Shift+W) — Window manager bridge for Hyprland, Sway, i3, KDE/KWin, and X11 (EWMH) — list/focus/move/close windows, switch workspaces
 
 ### Operator Console Direction
 
@@ -120,6 +120,28 @@ POST-style startup animation with progress bar plus boot-deck actions.
 
 ## Installation
 
+### Pre-built Packages
+
+Build all packages at once with `./package.sh`, or install individual formats:
+
+```bash
+# Build packages (outputs to dist/)
+./package.sh
+
+# Debian / Ubuntu (.deb)
+sudo dpkg -i dist/cyberfile_1.2.3_amd64.deb
+
+# Fedora / openSUSE (.rpm)
+sudo rpm -i dist/cyberfile-1.2.3-1.x86_64.rpm
+
+# Arch Linux (PKGBUILD)
+cd dist/arch && makepkg -si
+
+# Portable tarball (any Linux)
+tar xzf dist/cyberfile-1.2.3-linux-x86_64.tar.gz
+cd cyberfile-1.2.3 && ./install.sh
+```
+
 ### From Source
 
 ```bash
@@ -141,6 +163,19 @@ sudo ./install.sh
 
 # Or install to custom prefix
 PREFIX=~/.local ./install.sh
+```
+
+### Uninstall
+
+```bash
+# Remove user-local install
+./uninstall.sh
+
+# Remove system-wide .deb
+sudo dpkg -r cyberfile
+
+# Remove system-wide .rpm
+sudo rpm -e cyberfile
 ```
 
 The install script copies the binary, .desktop file, and icon to the appropriate directories.

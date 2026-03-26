@@ -7,6 +7,8 @@ pub enum WmBackend {
     Hyprland,
     Sway,
     I3,
+    KWin,
+    X11Ewmh,
 }
 
 impl WmBackend {
@@ -15,6 +17,8 @@ impl WmBackend {
             Self::Hyprland => "Hyprland",
             Self::Sway => "Sway",
             Self::I3 => "i3",
+            Self::KWin => "KWin",
+            Self::X11Ewmh => "X11",
         }
     }
 
@@ -23,11 +27,14 @@ impl WmBackend {
             Self::Hyprland => "hyprctl",
             Self::Sway => "swaymsg",
             Self::I3 => "i3-msg",
+            Self::KWin => "qdbus",
+            Self::X11Ewmh => "xprop",
         }
     }
 }
 
-/// Detect which window manager is running (check env vars then fall back to binary probing).
+/// Detect which window manager is running.
+/// Priority: Hyprland > Sway > i3 > KDE/KWin > generic X11 EWMH.
 pub fn detect_wm() -> Option<WmBackend> {
     // Hyprland sets HYPRLAND_INSTANCE_SIGNATURE
     if std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok() {
@@ -41,7 +48,29 @@ pub fn detect_wm() -> Option<WmBackend> {
     if std::env::var("I3SOCK").is_ok() {
         return Some(WmBackend::I3);
     }
+    // KDE/KWin — check for KDE_SESSION_VERSION or KDE desktop and qdbus reachability
+    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_uppercase();
+    if desktop.contains("KDE") || std::env::var("KDE_SESSION_VERSION").is_ok() {
+        if cmd_ok("qdbus", &["org.kde.KWin", "/KWin", "org.kde.KWin.currentDesktop"]) {
+            return Some(WmBackend::KWin);
+        }
+    }
+    // Generic X11 EWMH — any X11 session with xprop available
+    if std::env::var("DISPLAY").is_ok() && cmd_ok("xprop", &["-root", "-len", "0", "_NET_SUPPORTED"]) {
+        return Some(WmBackend::X11Ewmh);
+    }
     None
+}
+
+/// Quick check whether a command succeeds (exit 0).
+fn cmd_ok(cmd: &str, args: &[&str]) -> bool {
+    Command::new(cmd)
+        .args(args)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
 
 // ── Data Structs ───────────────────────────────────────────
@@ -70,6 +99,7 @@ pub fn list_windows(backend: WmBackend) -> Result<Vec<WmWindow>, String> {
         WmBackend::Hyprland => list_windows_hyprland(),
         WmBackend::Sway => list_windows_sway_i3("swaymsg"),
         WmBackend::I3 => list_windows_sway_i3("i3-msg"),
+        WmBackend::KWin | WmBackend::X11Ewmh => list_windows_x11(),
     }
 }
 
@@ -170,6 +200,8 @@ pub fn list_workspaces(backend: WmBackend) -> Result<Vec<WmWorkspace>, String> {
     match backend {
         WmBackend::Hyprland => list_workspaces_hyprland(),
         WmBackend::Sway | WmBackend::I3 => list_workspaces_sway_i3(backend.command()),
+        WmBackend::KWin => list_workspaces_kwin(),
+        WmBackend::X11Ewmh => list_workspaces_x11(),
     }
 }
 
@@ -265,6 +297,7 @@ pub fn focus_window(backend: WmBackend, window_id: &str) -> Result<(), String> {
         WmBackend::I3 => {
             run_cmd("i3-msg", &[&format!("[con_id={}] focus", window_id)])
         }
+        WmBackend::KWin | WmBackend::X11Ewmh => focus_window_x11(window_id),
     }
 }
 
@@ -290,6 +323,8 @@ pub fn move_window_to_workspace(
             "i3-msg",
             &[&format!("[con_id={}] move to workspace {}", window_id, workspace)],
         ),
+        WmBackend::KWin => move_window_to_workspace_kwin(window_id, workspace),
+        WmBackend::X11Ewmh => move_window_to_workspace_x11(window_id, workspace),
     }
 }
 
@@ -300,6 +335,8 @@ pub fn switch_workspace(backend: WmBackend, workspace: &str) -> Result<(), Strin
         }
         WmBackend::Sway => run_cmd("swaymsg", &[&format!("workspace {}", workspace)]),
         WmBackend::I3 => run_cmd("i3-msg", &[&format!("workspace {}", workspace)]),
+        WmBackend::KWin => switch_workspace_kwin(workspace),
+        WmBackend::X11Ewmh => switch_workspace_x11(workspace),
     }
 }
 
@@ -314,7 +351,403 @@ pub fn close_window(backend: WmBackend, window_id: &str) -> Result<(), String> {
         WmBackend::I3 => {
             run_cmd("i3-msg", &[&format!("[con_id={}] kill", window_id)])
         }
+        WmBackend::KWin | WmBackend::X11Ewmh => close_window_x11(window_id),
     }
+}
+
+// ── X11 / EWMH Implementation ──────────────────────────────
+// Works on any EWMH-compliant X11 WM: KDE, GNOME, XFCE, MATE,
+// Cinnamon, LXQt, Openbox, Fluxbox, etc.
+
+fn list_windows_x11() -> Result<Vec<WmWindow>, String> {
+    // Get _NET_CLIENT_LIST from root window
+    let output = Command::new("xprop")
+        .args(["-root", "_NET_CLIENT_LIST"])
+        .output()
+        .map_err(|e| format!("xprop failed: {}", e))?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let wids = parse_xprop_window_list(&stdout);
+    if wids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Get the active/focused window
+    let active_output = Command::new("xprop")
+        .args(["-root", "_NET_ACTIVE_WINDOW"])
+        .output()
+        .ok();
+    let active_wid = active_output
+        .as_ref()
+        .map(|o| {
+            let s = String::from_utf8_lossy(&o.stdout);
+            parse_xprop_single_window(&s)
+        })
+        .unwrap_or_default();
+
+    let mut windows = Vec::new();
+    for wid in &wids {
+        // Query per-window properties in one xprop call
+        let output = Command::new("xprop")
+            .args(["-id", wid, "_NET_WM_NAME", "WM_CLASS", "_NET_WM_DESKTOP"])
+            .output();
+        let Ok(output) = output else { continue };
+        let props = String::from_utf8_lossy(&output.stdout);
+
+        let title = parse_xprop_string(&props, "_NET_WM_NAME");
+        let class = parse_xprop_wm_class(&props);
+        let desktop_str = parse_xprop_cardinal(&props, "_NET_WM_DESKTOP");
+
+        // Skip desktop shell windows (desktop 0xFFFFFFFF / 4294967295)
+        if desktop_str == "4294967295" {
+            continue;
+        }
+        // Skip windows with no title and no class
+        if title.is_empty() && class.is_empty() {
+            continue;
+        }
+
+        let workspace = if desktop_str.is_empty() {
+            String::new()
+        } else {
+            // Convert 0-based index to display name
+            let idx: usize = desktop_str.parse().unwrap_or(0);
+            format!("{}", idx + 1)
+        };
+
+        windows.push(WmWindow {
+            id: wid.clone(),
+            title,
+            class,
+            workspace,
+            focused: *wid == active_wid,
+        });
+    }
+    Ok(windows)
+}
+
+fn list_workspaces_kwin() -> Result<Vec<WmWorkspace>, String> {
+    // Use KWin VirtualDesktopManager D-Bus for rich info
+    let output = Command::new("qdbus")
+        .args(["--literal", "org.kde.KWin", "/VirtualDesktopManager",
+               "org.kde.KWin.VirtualDesktopManager.desktops"])
+        .output()
+        .map_err(|e| format!("qdbus failed: {}", e))?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Get current desktop UUID
+    let current_output = Command::new("qdbus")
+        .args(["org.kde.KWin", "/VirtualDesktopManager",
+               "org.kde.KWin.VirtualDesktopManager.current"])
+        .output()
+        .ok();
+    let current_id = current_output
+        .as_ref()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+
+    // Count windows per desktop via xprop
+    let win_desktop_map = count_windows_per_desktop_x11();
+
+    // Parse qdbus --literal output: [Variant: [Argument: a(uss) {[Argument: (uss) 0, "uuid", "name"], ...}]]
+    let mut workspaces = Vec::new();
+    // Extract each (uss) tuple: index, uuid, name
+    let mut search = stdout.as_ref();
+    let mut ws_index: usize = 0;
+    while let Some(pos) = search.find("(uss)") {
+        let after = &search[pos + 5..];
+        // Format: " 0, \"uuid\", \"name\""
+        let after = after.trim_start();
+        // Parse numeric index
+        let comma1 = after.find(',').unwrap_or(after.len());
+        let _idx_str = after[..comma1].trim();
+        let after = &after[comma1.saturating_add(1)..];
+        // Parse UUID
+        let uuid = extract_quoted(after);
+        let after = &after[after.find(',').unwrap_or(0).saturating_add(1)..];
+        // Parse name
+        let name = extract_quoted(after);
+
+        let wc = win_desktop_map.get(&ws_index).copied().unwrap_or(0);
+        workspaces.push(WmWorkspace {
+            id: uuid.clone(),
+            name: if name.is_empty() { format!("Desktop {}", ws_index + 1) } else { name },
+            focused: uuid == current_id,
+            window_count: wc,
+        });
+        ws_index += 1;
+        // Advance past this entry
+        let advance = after.find(']').unwrap_or(0).saturating_add(1);
+        search = &after[advance..];
+    }
+
+    // Fallback: if qdbus parsing returned nothing, try X11 EWMH
+    if workspaces.is_empty() {
+        return list_workspaces_x11();
+    }
+    Ok(workspaces)
+}
+
+fn list_workspaces_x11() -> Result<Vec<WmWorkspace>, String> {
+    let output = Command::new("xprop")
+        .args(["-root", "_NET_NUMBER_OF_DESKTOPS", "_NET_CURRENT_DESKTOP", "_NET_DESKTOP_NAMES"])
+        .output()
+        .map_err(|e| format!("xprop failed: {}", e))?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    let num_desktops: usize = parse_xprop_cardinal(&stdout, "_NET_NUMBER_OF_DESKTOPS")
+        .parse()
+        .unwrap_or(1);
+    let current_desktop: usize = parse_xprop_cardinal(&stdout, "_NET_CURRENT_DESKTOP")
+        .parse()
+        .unwrap_or(0);
+    let desktop_names = parse_xprop_string_list(&stdout, "_NET_DESKTOP_NAMES");
+    let win_desktop_map = count_windows_per_desktop_x11();
+
+    let mut workspaces = Vec::new();
+    for i in 0..num_desktops {
+        let name = desktop_names.get(i).cloned()
+            .unwrap_or_else(|| format!("Desktop {}", i + 1));
+        let wc = win_desktop_map.get(&i).copied().unwrap_or(0);
+        workspaces.push(WmWorkspace {
+            id: format!("{}", i),
+            name,
+            focused: i == current_desktop,
+            window_count: wc,
+        });
+    }
+    Ok(workspaces)
+}
+
+/// Count windows per 0-based desktop index via _NET_WM_DESKTOP.
+fn count_windows_per_desktop_x11() -> std::collections::HashMap<usize, usize> {
+    let mut map = std::collections::HashMap::new();
+    let output = Command::new("xprop")
+        .args(["-root", "_NET_CLIENT_LIST"])
+        .output()
+        .ok();
+    let Some(output) = output else { return map };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for wid in parse_xprop_window_list(&stdout) {
+        let output = Command::new("xprop")
+            .args(["-id", &wid, "_NET_WM_DESKTOP"])
+            .output()
+            .ok();
+        let Some(output) = output else { continue };
+        let s = String::from_utf8_lossy(&output.stdout);
+        let ds = parse_xprop_cardinal(&s, "_NET_WM_DESKTOP");
+        if ds == "4294967295" { continue; }
+        if let Ok(idx) = ds.parse::<usize>() {
+            *map.entry(idx).or_insert(0) += 1;
+        }
+    }
+    map
+}
+
+// ── X11/KWin Actions ───────────────────────────────────────
+
+fn focus_window_x11(window_id: &str) -> Result<(), String> {
+    // Use xdotool if available, otherwise wmctrl, otherwise raw X ClientMessage via xprop
+    if cmd_ok("xdotool", &["--version"]) {
+        return run_cmd("xdotool", &["windowactivate", "--sync", window_id]);
+    }
+    if cmd_ok("wmctrl", &["-l"]) {
+        return run_cmd("wmctrl", &["-i", "-a", window_id]);
+    }
+    // Fallback: send _NET_ACTIVE_WINDOW client message via xdotool-less approach
+    // Use xprop to set _NET_ACTIVE_WINDOW (limited but works on many WMs)
+    Err("Install xdotool or wmctrl for window focus support".into())
+}
+
+fn close_window_x11(window_id: &str) -> Result<(), String> {
+    if cmd_ok("xdotool", &["--version"]) {
+        return run_cmd("xdotool", &["windowclose", window_id]);
+    }
+    if cmd_ok("wmctrl", &["-l"]) {
+        return run_cmd("wmctrl", &["-i", "-c", window_id]);
+    }
+    Err("Install xdotool or wmctrl for window close support".into())
+}
+
+fn switch_workspace_kwin(workspace: &str) -> Result<(), String> {
+    // KWin uses 1-based desktop index for setCurrentDesktop
+    // workspace id is 0-based from our listing; convert
+    let idx: i32 = workspace.parse::<i32>().unwrap_or(0) + 1;
+    run_cmd("qdbus", &[
+        "org.kde.KWin", "/KWin",
+        "org.kde.KWin.setCurrentDesktop",
+        &idx.to_string(),
+    ])
+}
+
+fn switch_workspace_x11(workspace: &str) -> Result<(), String> {
+    if cmd_ok("xdotool", &["--version"]) {
+        return run_cmd("xdotool", &["set_desktop", workspace]);
+    }
+    if cmd_ok("wmctrl", &["-l"]) {
+        return run_cmd("wmctrl", &["-s", workspace]);
+    }
+    Err("Install xdotool or wmctrl for workspace switching".into())
+}
+
+fn move_window_to_workspace_kwin(window_id: &str, workspace: &str) -> Result<(), String> {
+    // KWin: use xdotool/wmctrl for move + qdbus for desktop number
+    let desktop: i32 = workspace.parse::<i32>().unwrap_or(0) + 1;
+    if cmd_ok("wmctrl", &["-l"]) {
+        return run_cmd("wmctrl", &["-i", "-r", window_id, "-t", &workspace]);
+    }
+    if cmd_ok("xdotool", &["--version"]) {
+        return run_cmd("xdotool", &["set_desktop_for_window", window_id, &workspace]);
+    }
+    // Fallback via KWin scripting
+    let uuid = window_id.trim_start_matches('{').trim_end_matches('}');
+    let script = format!(
+        "var clients = workspace.windowList();\nfor (var i = 0; i < clients.length; i++) {{\n    if (clients[i].internalId.toString() === \"{{{}}}\") {{\n        clients[i].desktop = {};\n    }}\n}}",
+        uuid,
+        desktop,
+    );
+    run_kwin_script(&script)
+}
+
+fn move_window_to_workspace_x11(window_id: &str, workspace: &str) -> Result<(), String> {
+    if cmd_ok("xdotool", &["--version"]) {
+        return run_cmd("xdotool", &["set_desktop_for_window", window_id, workspace]);
+    }
+    if cmd_ok("wmctrl", &["-l"]) {
+        return run_cmd("wmctrl", &["-i", "-r", window_id, "-t", workspace]);
+    }
+    Err("Install xdotool or wmctrl for move-to-workspace support".into())
+}
+
+/// Execute a temporary KWin script via D-Bus scripting.
+#[allow(dead_code)]
+fn run_kwin_script(script: &str) -> Result<(), String> {
+    // Write script to a temp file
+    let tmp = "/tmp/cyberfile_kwin_script.js";
+    std::fs::write(tmp, script).map_err(|e| format!("Write script: {}", e))?;
+    // Load and start the script
+    let output = Command::new("qdbus")
+        .args(["org.kde.KWin", "/Scripting",
+               "org.kde.kwin.Scripting.loadScript", tmp])
+        .output()
+        .map_err(|e| format!("qdbus loadScript: {}", e))?;
+    let script_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !output.status.success() || script_id.is_empty() {
+        let _ = std::fs::remove_file(tmp);
+        return Err("Failed to load KWin script".into());
+    }
+    let _ = Command::new("qdbus")
+        .args(["org.kde.KWin", "/Scripting",
+               "org.kde.kwin.Scripting.start"])
+        .output();
+    // Clean up — unload the script
+    let _ = Command::new("qdbus")
+        .args(["org.kde.KWin", "/Scripting",
+               "org.kde.kwin.Scripting.unloadScript", &script_id])
+        .output();
+    let _ = std::fs::remove_file(tmp);
+    Ok(())
+}
+
+// ── xprop Parsing Helpers ──────────────────────────────────
+
+/// Parse `_NET_CLIENT_LIST(WINDOW): window id # 0x..., 0x...` into hex window IDs.
+fn parse_xprop_window_list(output: &str) -> Vec<String> {
+    for line in output.lines() {
+        if line.contains("_NET_CLIENT_LIST") && line.contains('#') {
+            let after = line.split('#').nth(1).unwrap_or("");
+            return after
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| s.starts_with("0x"))
+                .collect();
+        }
+    }
+    Vec::new()
+}
+
+/// Parse `_NET_ACTIVE_WINDOW(WINDOW): window id # 0x...` into a single ID.
+fn parse_xprop_single_window(output: &str) -> String {
+    for line in output.lines() {
+        if line.contains('#') {
+            if let Some(id) = line.split('#').nth(1) {
+                let id = id.trim().split(',').next().unwrap_or("").trim();
+                if id.starts_with("0x") {
+                    return id.to_string();
+                }
+            }
+        }
+    }
+    String::new()
+}
+
+/// Parse `KEY(UTF8_STRING) = "value"` from xprop output.
+fn parse_xprop_string(output: &str, key: &str) -> String {
+    for line in output.lines() {
+        if line.starts_with(key) && line.contains('=') {
+            if let Some(val) = line.split('=').nth(1) {
+                let val = val.trim();
+                if val.starts_with('"') {
+                    return val.trim_matches('"').to_string();
+                }
+            }
+        }
+    }
+    String::new()
+}
+
+/// Parse `WM_CLASS(STRING) = "instance", "class"` — return the class part.
+fn parse_xprop_wm_class(output: &str) -> String {
+    for line in output.lines() {
+        if line.starts_with("WM_CLASS") && line.contains('=') {
+            if let Some(val) = line.split('=').nth(1) {
+                // Second quoted string is the class name
+                let parts: Vec<&str> = val.split('"').collect();
+                if parts.len() >= 4 {
+                    return parts[3].to_string();
+                } else if parts.len() >= 2 {
+                    return parts[1].to_string();
+                }
+            }
+        }
+    }
+    String::new()
+}
+
+/// Parse `KEY(CARDINAL) = 0` from xprop output.
+fn parse_xprop_cardinal(output: &str, key: &str) -> String {
+    for line in output.lines() {
+        if line.starts_with(key) && line.contains('=') {
+            if let Some(val) = line.split('=').nth(1) {
+                return val.trim().to_string();
+            }
+        }
+    }
+    String::new()
+}
+
+/// Parse `KEY(UTF8_STRING) = "a", "b", "c"` from xprop output.
+fn parse_xprop_string_list(output: &str, key: &str) -> Vec<String> {
+    for line in output.lines() {
+        if line.starts_with(key) && line.contains('=') {
+            if let Some(val) = line.split('=').nth(1) {
+                return val
+                    .split('"')
+                    .enumerate()
+                    .filter(|(i, _)| i % 2 == 1) // odd indices are inside quotes
+                    .map(|(_, s)| s.to_string())
+                    .collect();
+            }
+        }
+    }
+    Vec::new()
+}
+
+/// Extract first quoted string from text: ... "value" ...
+fn extract_quoted(s: &str) -> String {
+    let Some(start) = s.find('"') else { return String::new() };
+    let rest = &s[start + 1..];
+    let Some(end) = rest.find('"') else { return String::new() };
+    rest[..end].to_string()
 }
 
 // ── Helpers ────────────────────────────────────────────────

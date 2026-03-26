@@ -264,7 +264,7 @@ All effects are independently togglable and have intensity sliders:
 On launch, display a 2-3 second boot screen (skippable):
 
 ```text
-[SYSTEM] CYBERFILE v1.2.0
+[SYSTEM] CYBERFILE v1.2.3
 [SYSTEM] Initializing kernel interface... OK
 [SYSTEM] Mounting filesystem nodes...
 [  OK  ] /home — USER DATA SECTOR
