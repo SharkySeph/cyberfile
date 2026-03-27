@@ -447,7 +447,6 @@ pub fn set_default_sink(name: &str) {
     }
 }
 
-#[allow(dead_code)]
 pub fn set_stream_volume(stream_id: u32, percent: u32) {
     let vol = format!("{}%", percent.min(150));
     let _ = Command::new("pactl")

@@ -276,6 +276,7 @@ pub struct CyberFile {
     pub(crate) signal_deck_detached: bool,
     pub(crate) audio_snapshot: crate::integrations::audio::AudioSnapshot,
     pub(crate) audio_volume_slider: u32,
+    pub(crate) stream_volume_overrides: std::collections::HashMap<u32, f32>,
     pub(crate) audio_last_refresh: Instant,
     pub(crate) power_info: crate::integrations::audio::PowerInfo,
     pub(crate) brightness_percent: Option<u32>,
@@ -612,6 +613,7 @@ impl CyberFile {
             signal_deck_detached: false,
             audio_snapshot: crate::integrations::audio::AudioSnapshot::default(),
             audio_volume_slider: 50,
+            stream_volume_overrides: std::collections::HashMap::new(),
             audio_last_refresh: Instant::now(),
             power_info: crate::integrations::audio::PowerInfo::default(),
             brightness_percent: None,
@@ -858,6 +860,58 @@ impl CyberFile {
         }
     }
 
+    pub(crate) fn stop_selected_process(&mut self) {
+        let Some(pid) = self.process_selected_pid else {
+            return;
+        };
+        match crate::integrations::processes::stop_process(pid) {
+            Ok(()) => {
+                self.status_message = format!("Process paused: {} (SIGSTOP)", pid);
+                self.refresh_process_matrix(true);
+            }
+            Err(error) => self.set_error(error),
+        }
+    }
+
+    pub(crate) fn continue_selected_process(&mut self) {
+        let Some(pid) = self.process_selected_pid else {
+            return;
+        };
+        match crate::integrations::processes::continue_process(pid) {
+            Ok(()) => {
+                self.status_message = format!("Process resumed: {} (SIGCONT)", pid);
+                self.refresh_process_matrix(true);
+            }
+            Err(error) => self.set_error(error),
+        }
+    }
+
+    pub(crate) fn signal_selected_process(&mut self, signal: &str) {
+        let Some(pid) = self.process_selected_pid else {
+            return;
+        };
+        match crate::integrations::processes::send_signal(pid, signal) {
+            Ok(()) => {
+                self.status_message = format!("Signal SIG{} sent to PID {}", signal, pid);
+                self.refresh_process_matrix(true);
+            }
+            Err(error) => self.set_error(error),
+        }
+    }
+
+    pub(crate) fn renice_selected_process(&mut self, niceness: i32) {
+        let Some(pid) = self.process_selected_pid else {
+            return;
+        };
+        match crate::integrations::processes::renice_process(pid, niceness) {
+            Ok(()) => {
+                self.status_message = format!("Process {} renice to {}", pid, niceness);
+                self.refresh_process_matrix(true);
+            }
+            Err(error) => self.set_error(error),
+        }
+    }
+
     pub(crate) fn refresh_service_deck(&mut self, force: bool) {
         if !force && self.service_last_refresh.elapsed().as_secs() < 4 {
             return;
@@ -1000,6 +1054,15 @@ impl CyberFile {
         }
         self.audio_snapshot = crate::integrations::audio::collect_audio_snapshot();
         self.audio_volume_slider = self.audio_snapshot.default_sink_volume;
+        // Sync stream volume overrides with current snapshot
+        let active_ids: std::collections::HashSet<u32> =
+            self.audio_snapshot.streams.iter().map(|s| s.id).collect();
+        self.stream_volume_overrides.retain(|id, _| active_ids.contains(id));
+        for stream in &self.audio_snapshot.streams {
+            self.stream_volume_overrides
+                .entry(stream.id)
+                .or_insert(stream.volume_percent as f32);
+        }
         self.audio_last_refresh = Instant::now();
     }
 

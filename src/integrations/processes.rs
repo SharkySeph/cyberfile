@@ -98,3 +98,58 @@ pub fn terminate_process(pid: i32, force: bool) -> Result<(), String> {
         Err(format!("kill failed: {}", stderr.trim()))
     }
 }
+
+/// Send SIGSTOP to pause a process.
+pub fn stop_process(pid: i32) -> Result<(), String> {
+    send_signal(pid, "STOP")
+}
+
+/// Send SIGCONT to resume a stopped process.
+pub fn continue_process(pid: i32) -> Result<(), String> {
+    send_signal(pid, "CONT")
+}
+
+/// Send an arbitrary signal by name (e.g. "HUP", "USR1", "USR2").
+pub fn send_signal(pid: i32, signal: &str) -> Result<(), String> {
+    let sig = format!("-{}", signal);
+    let output = Command::new("kill")
+        .args([&sig, &pid.to_string()])
+        .output()
+        .map_err(|error| format!("kill failed: {}", error))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("kill -{} failed: {}", signal, stderr.trim()))
+    }
+}
+
+/// Set process priority (nice value). Range: -20 (highest) to 19 (lowest).
+pub fn renice_process(pid: i32, niceness: i32) -> Result<(), String> {
+    let nice_val = niceness.clamp(-20, 19);
+    let output = Command::new("renice")
+        .args([&nice_val.to_string(), "-p", &pid.to_string()])
+        .output()
+        .map_err(|error| format!("renice failed: {}", error))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("renice failed: {}", stderr.trim()))
+    }
+}
+
+/// Get the current nice value for a process.
+pub fn get_nice_value(pid: i32) -> Option<i32> {
+    let path = format!("/proc/{}/stat", pid);
+    let stat = fs::read_to_string(path).ok()?;
+    // Field 19 (0-indexed from after the comm field) is the nice value
+    // Format: pid (comm) state ppid ... nice ...
+    // The comm may contain spaces/parens, so find the last ')' first
+    let after_comm = stat.find(')')?.checked_add(2)?;
+    let fields: Vec<&str> = stat[after_comm..].split_whitespace().collect();
+    // nice is field index 16 (0-based from after comm)
+    fields.get(16).and_then(|v| v.parse().ok())
+}

@@ -245,9 +245,10 @@ impl CyberFile {
                             RichText::new("⟐ TERM")
                                 .color(btn_color)
                                 .monospace()
-                                .size(11.0),
+                                .size(10.0),
                         ),
                     )
+                    .on_hover_text("Send SIGTERM (graceful)")
                     .clicked()
                 {
                     self.terminate_selected_process(false);
@@ -260,12 +261,73 @@ impl CyberFile {
                             RichText::new("⟐ KILL")
                                 .color(if has_selection { t.danger() } else { t.text_dim() })
                                 .monospace()
-                                .size(11.0),
+                                .size(10.0),
                         ),
                     )
+                    .on_hover_text("Send SIGKILL (force)")
                     .clicked()
                 {
                     self.terminate_selected_process(true);
+                }
+
+                ui.separator();
+
+                // Check if selected process is stopped
+                let selected_stopped = self.process_selected_pid.map(|pid| {
+                    self.process_entries.iter()
+                        .find(|e| e.pid == pid)
+                        .map(|e| e.status.starts_with('T'))
+                        .unwrap_or(false)
+                }).unwrap_or(false);
+
+                if selected_stopped {
+                    if ui
+                        .add_enabled(
+                            has_selection,
+                            egui::Button::new(
+                                RichText::new("▶ CONT")
+                                    .color(if has_selection { t.success() } else { t.text_dim() })
+                                    .monospace()
+                                    .size(10.0),
+                            ),
+                        )
+                        .on_hover_text("Send SIGCONT (resume)")
+                        .clicked()
+                    {
+                        self.continue_selected_process();
+                    }
+                } else {
+                    if ui
+                        .add_enabled(
+                            has_selection,
+                            egui::Button::new(
+                                RichText::new("⏸ STOP")
+                                    .color(if has_selection { t.accent() } else { t.text_dim() })
+                                    .monospace()
+                                    .size(10.0),
+                            ),
+                        )
+                        .on_hover_text("Send SIGSTOP (pause)")
+                        .clicked()
+                    {
+                        self.stop_selected_process();
+                    }
+                }
+
+                if ui
+                    .add_enabled(
+                        has_selection,
+                        egui::Button::new(
+                            RichText::new("⟐ HUP")
+                                .color(if has_selection { t.primary() } else { t.text_dim() })
+                                .monospace()
+                                .size(10.0),
+                        ),
+                    )
+                    .on_hover_text("Send SIGHUP (reload config)")
+                    .clicked()
+                {
+                    self.signal_selected_process("HUP");
                 }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -277,6 +339,40 @@ impl CyberFile {
                     );
                 });
             });
+
+            // ── Priority Controls ──────────────────────────
+            if let Some(pid) = self.process_selected_pid {
+                let nice = crate::integrations::processes::get_nice_value(pid);
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(format!(
+                            "PID {} │ NICE: {}",
+                            pid,
+                            nice.map(|n| n.to_string()).unwrap_or_else(|| "?".into()),
+                        ))
+                        .color(t.text_dim())
+                        .monospace()
+                        .size(10.0),
+                    );
+                    ui.separator();
+                    if ui
+                        .button(RichText::new("▲ +PRI").color(t.accent()).monospace().size(10.0))
+                        .on_hover_text("Increase priority (lower nice)")
+                        .clicked()
+                    {
+                        let new_nice = nice.unwrap_or(0) - 5;
+                        self.renice_selected_process(new_nice);
+                    }
+                    if ui
+                        .button(RichText::new("▼ −PRI").color(t.text_dim()).monospace().size(10.0))
+                        .on_hover_text("Decrease priority (higher nice)")
+                        .clicked()
+                    {
+                        let new_nice = nice.unwrap_or(0) + 5;
+                        self.renice_selected_process(new_nice);
+                    }
+                });
+            }
     }
 }
 

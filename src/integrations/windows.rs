@@ -297,7 +297,8 @@ pub fn focus_window(backend: WmBackend, window_id: &str) -> Result<(), String> {
         WmBackend::I3 => {
             run_cmd("i3-msg", &[&format!("[con_id={}] focus", window_id)])
         }
-        WmBackend::KWin | WmBackend::X11Ewmh => focus_window_x11(window_id),
+        WmBackend::KWin => focus_window_kwin(window_id),
+        WmBackend::X11Ewmh => focus_window_x11(window_id),
     }
 }
 
@@ -351,7 +352,8 @@ pub fn close_window(backend: WmBackend, window_id: &str) -> Result<(), String> {
         WmBackend::I3 => {
             run_cmd("i3-msg", &[&format!("[con_id={}] kill", window_id)])
         }
-        WmBackend::KWin | WmBackend::X11Ewmh => close_window_x11(window_id),
+        WmBackend::KWin => close_window_kwin(window_id),
+        WmBackend::X11Ewmh => close_window_x11(window_id),
     }
 }
 
@@ -568,6 +570,60 @@ fn close_window_x11(window_id: &str) -> Result<(), String> {
     Err("Install xdotool or wmctrl for window close support".into())
 }
 
+// ── KWin-native D-Bus Actions ──────────────────────────────
+// Use KWin scripting via D-Bus so we don't need xdotool/wmctrl.
+
+fn focus_window_kwin(window_id: &str) -> Result<(), String> {
+    // Try xdotool/wmctrl first (faster), then KWin D-Bus scripting
+    if cmd_ok("xdotool", &["--version"]) {
+        return run_cmd("xdotool", &["windowactivate", "--sync", window_id]);
+    }
+    if cmd_ok("wmctrl", &["-l"]) {
+        return run_cmd("wmctrl", &["-i", "-a", window_id]);
+    }
+    // KWin scripting fallback: activate window by X11 window ID
+    let wid = parse_hex_window_id(window_id);
+    let script = format!(
+        "var clients = workspace.clientList();\n\
+         for (var i = 0; i < clients.length; i++) {{\n\
+             if (clients[i].windowId === {}) {{\n\
+                 workspace.activeClient = clients[i];\n\
+                 break;\n\
+             }}\n\
+         }}",
+        wid,
+    );
+    run_kwin_script(&script)
+}
+
+fn close_window_kwin(window_id: &str) -> Result<(), String> {
+    if cmd_ok("xdotool", &["--version"]) {
+        return run_cmd("xdotool", &["windowclose", window_id]);
+    }
+    if cmd_ok("wmctrl", &["-l"]) {
+        return run_cmd("wmctrl", &["-i", "-c", window_id]);
+    }
+    // KWin scripting fallback: close window by X11 window ID
+    let wid = parse_hex_window_id(window_id);
+    let script = format!(
+        "var clients = workspace.clientList();\n\
+         for (var i = 0; i < clients.length; i++) {{\n\
+             if (clients[i].windowId === {}) {{\n\
+                 clients[i].closeWindow();\n\
+                 break;\n\
+             }}\n\
+         }}",
+        wid,
+    );
+    run_kwin_script(&script)
+}
+
+/// Convert hex window ID (e.g. "0x2200011") to a decimal number for KWin scripting.
+fn parse_hex_window_id(wid: &str) -> u64 {
+    let stripped = wid.trim().trim_start_matches("0x").trim_start_matches("0X");
+    u64::from_str_radix(stripped, 16).unwrap_or(0)
+}
+
 fn switch_workspace_kwin(workspace: &str) -> Result<(), String> {
     // KWin uses 1-based desktop index for setCurrentDesktop
     // workspace id is 0-based from our listing; convert
@@ -619,15 +675,14 @@ fn move_window_to_workspace_x11(window_id: &str, workspace: &str) -> Result<(), 
 }
 
 /// Execute a temporary KWin script via D-Bus scripting.
-#[allow(dead_code)]
 fn run_kwin_script(script: &str) -> Result<(), String> {
     // Write script to a temp file
     let tmp = "/tmp/cyberfile_kwin_script.js";
     std::fs::write(tmp, script).map_err(|e| format!("Write script: {}", e))?;
-    // Load and start the script
+    // Load the script — returns a numeric script ID
     let output = Command::new("qdbus")
         .args(["org.kde.KWin", "/Scripting",
-               "org.kde.kwin.Scripting.loadScript", tmp])
+               "org.kde.kwin.Scripting.loadScript", tmp, "cyberfile_action"])
         .output()
         .map_err(|e| format!("qdbus loadScript: {}", e))?;
     let script_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -635,11 +690,17 @@ fn run_kwin_script(script: &str) -> Result<(), String> {
         let _ = std::fs::remove_file(tmp);
         return Err("Failed to load KWin script".into());
     }
+    // Run the script on its specific D-Bus object path
+    let script_path = format!("/Scripting/Script{}", script_id);
     let _ = Command::new("qdbus")
-        .args(["org.kde.KWin", "/Scripting",
-               "org.kde.kwin.Scripting.start"])
+        .args(["org.kde.KWin", &script_path, "run"])
         .output();
-    // Clean up — unload the script
+    // Brief wait for script to execute
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    // Unload the script
+    let _ = Command::new("qdbus")
+        .args(["org.kde.KWin", &script_path, "stop"])
+        .output();
     let _ = Command::new("qdbus")
         .args(["org.kde.KWin", "/Scripting",
                "org.kde.kwin.Scripting.unloadScript", &script_id])

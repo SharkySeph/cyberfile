@@ -268,29 +268,44 @@ impl CyberFile {
                 } else {
                     stream.app_name.clone()
                 };
-                let mute_label = if stream.muted { " [MUTED]" } else { "" };
+                let text_color = if stream.muted { t.text_dim() } else { t.text_primary() };
                 ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(format!(
-                            "  ▸ {} — {}%{}",
-                            truncate_str(&app, 25),
-                            stream.volume_percent,
-                            mute_label
-                        ))
-                        .color(if stream.muted { t.text_dim() } else { t.text_primary() })
-                        .monospace()
-                        .size(10.0),
-                    );
+                    // Mute toggle
                     if ui
-                        .small_button(
+                        .button(
                             RichText::new(if stream.muted { "🔇" } else { "🔊" })
-                                .size(10.0),
+                                .color(if stream.muted { t.danger() } else { t.accent() })
+                                .size(12.0),
                         )
                         .clicked()
                     {
                         crate::integrations::audio::toggle_stream_mute(stream.id);
                         self.refresh_audio_snapshot(true);
                     }
+
+                    ui.label(
+                        RichText::new(truncate_str(&app, 20))
+                            .color(text_color)
+                            .monospace()
+                            .size(10.0),
+                    );
+
+                    // Per-stream volume slider
+                    let slider_id = ui.id().with(("stream_vol", stream.id));
+                    let mut vol = self
+                        .stream_volume_overrides
+                        .get(&stream.id)
+                        .copied()
+                        .unwrap_or(stream.volume_percent as f32);
+                    let slider = egui::Slider::new(&mut vol, 0.0..=150.0)
+                        .text("%")
+                        .show_value(true);
+                    let response = ui.add_sized([ui.available_width().min(200.0), 16.0], slider);
+                    if response.changed() {
+                        self.stream_volume_overrides.insert(stream.id, vol);
+                        crate::integrations::audio::set_stream_volume(stream.id, vol as u32);
+                    }
+                    let _ = slider_id;
                 });
             }
         }
