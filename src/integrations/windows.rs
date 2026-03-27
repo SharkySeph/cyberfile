@@ -676,13 +676,13 @@ fn move_window_to_workspace_x11(window_id: &str, workspace: &str) -> Result<(), 
 
 /// Execute a temporary KWin script via D-Bus scripting.
 fn run_kwin_script(script: &str) -> Result<(), String> {
-    // Write script to a temp file
     let tmp = "/tmp/cyberfile_kwin_script.js";
     std::fs::write(tmp, script).map_err(|e| format!("Write script: {}", e))?;
     // Load the script — returns a numeric script ID
+    let plugin_name = "cyberfile_action";
     let output = Command::new("qdbus")
         .args(["org.kde.KWin", "/Scripting",
-               "org.kde.kwin.Scripting.loadScript", tmp, "cyberfile_action"])
+               "loadScript", tmp, plugin_name])
         .output()
         .map_err(|e| format!("qdbus loadScript: {}", e))?;
     let script_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -690,20 +690,17 @@ fn run_kwin_script(script: &str) -> Result<(), String> {
         let _ = std::fs::remove_file(tmp);
         return Err("Failed to load KWin script".into());
     }
-    // Run the script on its specific D-Bus object path
-    let script_path = format!("/Scripting/Script{}", script_id);
+    // Run via /{id} (KDE 5 KWin D-Bus object path)
+    let script_path = format!("/{}", script_id);
     let _ = Command::new("qdbus")
         .args(["org.kde.KWin", &script_path, "run"])
         .output();
     // Brief wait for script to execute
-    std::thread::sleep(std::time::Duration::from_millis(100));
-    // Unload the script
-    let _ = Command::new("qdbus")
-        .args(["org.kde.KWin", &script_path, "stop"])
-        .output();
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    // Unload by plugin name
     let _ = Command::new("qdbus")
         .args(["org.kde.KWin", "/Scripting",
-               "org.kde.kwin.Scripting.unloadScript", &script_id])
+               "unloadScript", plugin_name])
         .output();
     let _ = std::fs::remove_file(tmp);
     Ok(())
