@@ -2597,22 +2597,37 @@ impl CyberFile {
     }
 
     pub(crate) fn execute_command(&mut self) {
-        if self.command_surface_mode == CommandSurfaceMode::Protocol {
-            self.execute_protocol_launcher();
-            return;
-        }
-
         let text = self.command_bar_text.trim().to_string();
         if text.is_empty() {
             return;
         }
 
+        // Strip shell-style "cd " prefix — users naturally type "cd /path"
+        let text = if let Some(rest) = text.strip_prefix("cd ") {
+            rest.trim().to_string()
+        } else {
+            text
+        };
+
+        // Always try path navigation first, regardless of mode — if the user
+        // typed something that resolves to a real directory or file, go there.
         let path = self.resolve_command_path(&text);
         if path.is_dir() {
+            self.set_command_surface_mode(CommandSurfaceMode::Path);
             self.navigate_to(path);
-        } else if path.is_file() {
+            return;
+        }
+        if path.is_file() {
             self.open_file(&path);
-        } else if Self::looks_like_path(&text) {
+            return;
+        }
+
+        if self.command_surface_mode == CommandSurfaceMode::Protocol {
+            self.execute_protocol_launcher();
+            return;
+        }
+
+        if Self::looks_like_path(&text) {
             // User clearly intended a path — don't fall through to search.
             self.set_error(format!("Path not found: {}", path.display()));
         } else if self.fzf_available {

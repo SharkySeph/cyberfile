@@ -125,12 +125,15 @@ impl CyberFile {
                             }
                         }
 
-                        if response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        // Enter in a singleline TextEdit surrenders focus before
+                        // returning the response, so has_focus() is already false.
+                        // Use lost_focus() + Enter check — the standard egui pattern.
+                        if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                             self.execute_command();
                         }
 
                         // Tab-complete paths in Path mode
-                        if response.has_focus()
+                        if (response.has_focus() || response.lost_focus())
                             && self.command_surface_mode == CommandSurfaceMode::Path
                             && ui.input(|i| i.key_pressed(egui::Key::Tab))
                         {
