@@ -129,6 +129,14 @@ impl CyberFile {
                             self.execute_command();
                         }
 
+                        // Tab-complete paths in Path mode
+                        if response.has_focus()
+                            && self.command_surface_mode == CommandSurfaceMode::Path
+                            && ui.input(|i| i.key_pressed(egui::Key::Tab))
+                        {
+                            self.tab_complete_path();
+                        }
+
                         self.command_bar_active = response.has_focus();
 
                         ui.add_space(4.0);

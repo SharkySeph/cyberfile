@@ -2475,6 +2475,119 @@ impl CyberFile {
         self.load_current_directory();
     }
 
+    /// Resolve user-typed text into an absolute path, expanding `~` and
+    /// resolving relative segments against `current_path`.
+    fn resolve_command_path(&self, text: &str) -> PathBuf {
+        let expanded = if text.starts_with("~/") || text == "~" {
+            if let Some(home) = std::env::var_os("HOME") {
+                PathBuf::from(home).join(text.strip_prefix("~/").unwrap_or(""))
+            } else {
+                PathBuf::from(text)
+            }
+        } else {
+            PathBuf::from(text)
+        };
+
+        if expanded.is_absolute() {
+            expanded
+        } else {
+            self.current_path.join(expanded)
+        }
+    }
+
+    /// Return `true` when the input looks like a filesystem path rather than a
+    /// search query (starts with `/`, `~`, `./`, or `../`).
+    fn looks_like_path(text: &str) -> bool {
+        text.starts_with('/')
+            || text.starts_with("~/")
+            || text == "~"
+            || text.starts_with("./")
+            || text.starts_with("../")
+    }
+
+    /// Tab-complete the current command-bar text as a filesystem path.
+    /// Fills in the longest common prefix of matching entries; if there
+    /// is exactly one match and it is a directory, appends `/`.
+    pub(crate) fn tab_complete_path(&mut self) {
+        let text = self.command_bar_text.clone();
+        let resolved = self.resolve_command_path(text.trim());
+
+        // Determine the parent directory and the partial name we're completing.
+        let (dir, prefix) = if resolved.is_dir() && text.ends_with('/') {
+            // User typed e.g. "/etc/" → list children of /etc
+            (resolved.clone(), String::new())
+        } else {
+            let parent = resolved.parent().unwrap_or(&resolved).to_path_buf();
+            let partial = resolved
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            (parent, partial)
+        };
+
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            return;
+        };
+
+        let prefix_lower = prefix.to_lowercase();
+        let mut matches: Vec<(String, bool)> = Vec::new();
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.to_lowercase().starts_with(&prefix_lower) {
+                let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+                matches.push((name, is_dir));
+            }
+        }
+
+        if matches.is_empty() {
+            return;
+        }
+
+        // Sort for determinism
+        matches.sort_by(|a, b| a.0.cmp(&b.0));
+
+        // Longest common prefix among matches
+        let first = &matches[0].0;
+        let mut common_len = first.len();
+        for m in &matches[1..] {
+            common_len = first
+                .chars()
+                .zip(m.0.chars())
+                .take_while(|(a, b)| a.eq_ignore_ascii_case(b))
+                .count()
+                .min(common_len);
+        }
+        let completed_name = &first[..first
+            .char_indices()
+            .nth(common_len)
+            .map(|(i, _)| i)
+            .unwrap_or(first.len())];
+
+        let new_path = dir.join(completed_name);
+        if matches.len() == 1 && matches[0].1 {
+            // Single directory match — append separator so further Tab presses
+            // drill deeper.
+            let mut s = new_path.to_string_lossy().to_string();
+            if !s.ends_with('/') {
+                s.push('/');
+            }
+            self.command_bar_text = s;
+        } else {
+            // Re-derive user-friendly text: keep `~` prefix if the user typed one.
+            if text.starts_with("~/") || text == "~" {
+                if let Some(home) = std::env::var_os("HOME") {
+                    let home_path = PathBuf::from(home);
+                    if let Ok(suffix) = new_path.strip_prefix(&home_path) {
+                        self.command_bar_text =
+                            format!("~/{}", suffix.to_string_lossy());
+                        return;
+                    }
+                }
+            }
+            self.command_bar_text = new_path.to_string_lossy().to_string();
+        }
+    }
+
     pub(crate) fn execute_command(&mut self) {
         if self.command_surface_mode == CommandSurfaceMode::Protocol {
             self.execute_protocol_launcher();
@@ -2486,11 +2599,14 @@ impl CyberFile {
             return;
         }
 
-        let path = PathBuf::from(&text);
+        let path = self.resolve_command_path(&text);
         if path.is_dir() {
             self.navigate_to(path);
         } else if path.is_file() {
             self.open_file(&path);
+        } else if Self::looks_like_path(&text) {
+            // User clearly intended a path — don't fall through to search.
+            self.set_error(format!("Path not found: {}", path.display()));
         } else if self.fzf_available {
             // Use fzf for fuzzy search
             self.fzf_search(&text);
