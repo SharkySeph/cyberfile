@@ -269,13 +269,13 @@ impl CyberFile {
                 egui::Id::new("chromatic_aberration"),
             ));
             let time = self.frame_count as f32 * 0.008;
-            let edge_depth = 60.0;
+            let edge_depth = 100.0;
 
             // Persistent edge fringing — red shifts outward, blue shifts inward
-            let fringe_steps: usize = 10;
+            let fringe_steps: usize = 14;
             for i in 0..fringe_steps {
                 let frac = i as f32 / fringe_steps as f32;
-                let alpha = ((1.0 - frac) * (1.0 - frac) * 18.0) as u8;
+                let alpha = ((1.0 - frac) * (1.0 - frac) * 50.0) as u8;
                 if alpha == 0 { continue; }
                 let offset = frac * edge_depth;
                 let step_size = edge_depth / fringe_steps as f32;
@@ -325,27 +325,27 @@ impl CyberFile {
             }
 
             // Slow-drifting horizontal interference lines across the screen
-            let line_count: usize = 8;
+            let line_count: usize = 14;
             for i in 0..line_count {
                 let base_y = screen.top()
                     + ((i as f32 * 137.3 + time * 12.0) % screen.height());
                 // Red shift left
                 painter.rect_filled(
                     egui::Rect::from_min_size(
-                        egui::pos2(screen.left() - 1.5, base_y),
+                        egui::pos2(screen.left() - 2.5, base_y),
                         egui::vec2(screen.width(), 1.0),
                     ),
                     0.0,
-                    Color32::from_rgba_premultiplied(10, 0, 0, 10),
+                    Color32::from_rgba_premultiplied(25, 0, 0, 25),
                 );
                 // Blue shift right
                 painter.rect_filled(
                     egui::Rect::from_min_size(
-                        egui::pos2(screen.left() + 1.5, base_y + 1.0),
+                        egui::pos2(screen.left() + 2.5, base_y + 1.0),
                         egui::vec2(screen.width(), 1.0),
                     ),
                     0.0,
-                    Color32::from_rgba_premultiplied(0, 0, 10, 10),
+                    Color32::from_rgba_premultiplied(0, 0, 25, 25),
                 );
             }
             ctx.request_repaint();
@@ -446,6 +446,34 @@ impl CyberFile {
 
         // ── High Contrast Mode ─────────────────────────────
         if self.high_contrast {
+            // Boost egui visuals for genuine contrast improvement
+            let mut visuals = ctx.style().visuals.clone();
+            let t = self.current_theme;
+
+            // Brighten text strokes for readability
+            visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.5, Color32::WHITE);
+            visuals.widgets.inactive.fg_stroke = Stroke::new(1.5, Color32::WHITE);
+            visuals.widgets.hovered.fg_stroke = Stroke::new(2.0, Color32::WHITE);
+            visuals.widgets.active.fg_stroke = Stroke::new(2.0, Color32::WHITE);
+            visuals.override_text_color = Some(Color32::WHITE);
+
+            // Strengthen borders for element separation
+            visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, t.primary());
+            visuals.widgets.inactive.bg_stroke = Stroke::new(1.5, t.primary());
+            visuals.widgets.hovered.bg_stroke = Stroke::new(2.0, Color32::WHITE);
+
+            // Darken backgrounds to push contrast ratio
+            visuals.panel_fill = Color32::from_rgb(8, 8, 12);
+            visuals.window_fill = Color32::from_rgb(4, 4, 8);
+            visuals.extreme_bg_color = Color32::BLACK;
+
+            // Brighter selection
+            visuals.selection.bg_fill = Color32::from_rgba_premultiplied(
+                t.primary().r() / 3, t.primary().g() / 3, t.primary().b() / 3, 220,
+            );
+
+            ctx.set_visuals(visuals);
+
             let painter = ctx.layer_painter(egui::LayerId::new(
                 egui::Order::Foreground,
                 egui::Id::new("high_contrast"),
@@ -464,12 +492,12 @@ impl CyberFile {
             );
 
             // Darken edges to create contrast with content area
-            let edge_depth = 50.0;
-            let steps: usize = 8;
+            let edge_depth = 60.0;
+            let steps: usize = 10;
             let step_size = edge_depth / steps as f32;
             for i in 0..steps {
                 let frac = i as f32 / steps as f32;
-                let alpha = ((1.0 - frac) * (1.0 - frac) * 25.0) as u8;
+                let alpha = ((1.0 - frac) * (1.0 - frac) * 40.0) as u8;
                 if alpha == 0 { continue; }
                 let offset = frac * edge_depth;
                 let color = Color32::from_rgba_premultiplied(0, 0, 0, alpha);

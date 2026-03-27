@@ -518,6 +518,11 @@ impl CyberFile {
         }
 
         let sound_enabled = settings.sound_enabled;
+        let neon_glow = settings.neon_glow;
+        let chromatic_aberration = settings.chromatic_aberration;
+        let holographic_noise = settings.holographic_noise;
+        let reduced_motion = settings.reduced_motion;
+        let high_contrast = settings.high_contrast;
         let ui_scale_preview = settings.font_size;
         let startup_scene_request = if scene_store.session_scene.is_some() {
             Some(StartupSceneRequest::ResumeSession)
@@ -703,11 +708,11 @@ impl CyberFile {
             terminal_running_command: None,
             terminal_started_at: None,
             sound_enabled,
-            neon_glow: false,
-            chromatic_aberration: false,
-            holographic_noise: false,
-            reduced_motion: true,
-            high_contrast: false,
+            neon_glow,
+            chromatic_aberration,
+            holographic_noise,
+            reduced_motion,
+            high_contrast,
             sftp_dialog: false,
             sftp_host: String::new(),
             sftp_port: "22".to_string(),
@@ -2503,6 +2508,9 @@ impl CyberFile {
             || text == "~"
             || text.starts_with("./")
             || text.starts_with("../")
+            || text.contains('/')  // e.g. "src/ui" or "foo/bar"
+            || text == ".."
+            || text == "."
     }
 
     /// Tab-complete the current command-bar text as a filesystem path.
@@ -3214,9 +3222,14 @@ impl CyberFile {
     // ── Keyboard Shortcuts ────────────────────────────────────
 
     fn handle_keyboard(&mut self, ctx: &egui::Context) {
+        // Check if any text widget currently wants keyboard input — if so,
+        // bare-key shortcuts (like `/`) must not fire because the user is typing.
+        let any_text_focused = ctx.memory(|m| m.focused().is_some());
+
         let open_protocol_launcher = ctx.input(|input| {
             (input.modifiers.ctrl && input.key_pressed(egui::Key::K))
-                || (!input.modifiers.ctrl
+                || (!any_text_focused
+                    && !input.modifiers.ctrl
                     && !input.modifiers.alt
                     && !input.modifiers.shift
                     && input.key_pressed(egui::Key::Slash))
@@ -3438,10 +3451,12 @@ impl CyberFile {
             // Neon glow toggle
             if input.key_pressed(egui::Key::F8) {
                 self.neon_glow = !self.neon_glow;
+                self.settings.neon_glow = self.neon_glow;
             }
             // Chromatic aberration toggle
             if input.key_pressed(egui::Key::F6) {
                 self.chromatic_aberration = !self.chromatic_aberration;
+                self.settings.chromatic_aberration = self.chromatic_aberration;
             }
             // SFTP remote connection dialog
             if input.key_pressed(egui::Key::F9) {
