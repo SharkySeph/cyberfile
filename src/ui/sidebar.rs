@@ -449,6 +449,23 @@ impl CyberFile {
                 self.open_signal_deck();
             }
         }
+
+        if ui
+            .button(
+                RichText::new("⟐ SHELL JACK [Ctrl+E]")
+                    .color(if self.cli_visible { t.accent() } else { t.primary_dim() })
+                    .monospace()
+                    .size(11.0),
+            )
+            .clicked()
+        {
+            if self.cli_visible {
+                self.cli_visible = false;
+                self.cli_detached = false;
+            } else {
+                self.open_shell_jack();
+            }
+        }
     }
 
     // ── Network Mesh (sidebar widget) ───────────────────

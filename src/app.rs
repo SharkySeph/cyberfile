@@ -425,6 +425,18 @@ pub struct CyberFile {
     pub(crate) terminal_running_command: Option<String>,
     pub(crate) terminal_started_at: Option<Instant>,
 
+    // ── Embedded CLI ("SHELL JACK") ─────────────────────
+    pub(crate) cli_visible: bool,
+    pub(crate) cli_available_shells: Vec<crate::ui::embedded_terminal::ShellInfo>,
+    pub(crate) cli_selected_shell: usize,
+    pub(crate) cli_sessions: Vec<crate::ui::embedded_terminal::CliSession>,
+    pub(crate) cli_active_session: usize,
+    pub(crate) cli_next_session_id: u64,
+    pub(crate) cli_input_buffer: String,
+    pub(crate) cli_history: Vec<String>,
+    pub(crate) cli_history_pos: Option<usize>,
+    pub(crate) cli_detached: bool,
+
     // ── Sound ────────────────────────────────────────────
     pub(crate) sound_enabled: bool,
 
@@ -709,6 +721,16 @@ impl CyberFile {
             terminal_task_running: false,
             terminal_running_command: None,
             terminal_started_at: None,
+            cli_visible: false,
+            cli_available_shells: Vec::new(),
+            cli_selected_shell: 0,
+            cli_sessions: Vec::new(),
+            cli_active_session: 0,
+            cli_next_session_id: 1,
+            cli_input_buffer: String::new(),
+            cli_history: Vec::new(),
+            cli_history_pos: None,
+            cli_detached: false,
             sound_enabled,
             neon_glow,
             chromatic_aberration,
@@ -1876,6 +1898,14 @@ impl CyberFile {
             LauncherAction::OpenNetworkMesh => self.open_network_mesh(),
             LauncherAction::OpenDeviceBay => self.open_device_bay(),
             LauncherAction::OpenWindowBridge => self.open_window_bridge(),
+            LauncherAction::ToggleShellJack => {
+                if self.cli_visible {
+                    self.cli_visible = false;
+                    self.cli_detached = false;
+                } else {
+                    self.open_shell_jack();
+                }
+            }
         }
     }
 
@@ -3596,6 +3626,15 @@ impl CyberFile {
                     self.open_window_bridge();
                 }
             }
+            // Shell Jack — embedded CLI (Ctrl+E)
+            if ctrl && input.key_pressed(egui::Key::E) {
+                if self.cli_visible {
+                    self.cli_visible = false;
+                    self.cli_detached = false;
+                } else {
+                    self.open_shell_jack();
+                }
+            }
             if input.key_pressed(egui::Key::Escape) {
                 self.context_menu_open = false;
                 self.settings_panel_open = false;
@@ -3619,6 +3658,8 @@ impl CyberFile {
                 self.network_mesh_open = false;
                 self.device_bay_open = false;
                 self.window_bridge_open = false;
+                self.cli_visible = false;
+                self.cli_detached = false;
                 self.type_ahead_buffer.clear();
             }
         });
@@ -3741,7 +3782,10 @@ impl eframe::App for CyberFile {
 
         // Background task completions
         self.poll_background_tasks();
-        if self.terminal_task_running || self.content_search_in_progress || self.sftp_busy {
+        self.poll_cli_sessions();
+        if self.terminal_task_running || self.content_search_in_progress || self.sftp_busy
+            || self.cli_sessions.iter().any(|s| s.alive)
+        {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
 
@@ -3878,6 +3922,11 @@ impl eframe::App for CyberFile {
         // Stage 6 panel
         if self.window_bridge_open {
             self.render_window_bridge(ctx);
+        }
+
+        // Embedded CLI (Shell Jack)
+        if self.cli_visible {
+            self.render_shell_jack(ctx);
         }
 
         // HUD overlay elements (NERV-style indicators)

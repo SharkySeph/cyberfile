@@ -73,6 +73,7 @@ pub enum LauncherAction {
     OpenNetworkMesh,
     OpenDeviceBay,
     OpenWindowBridge,
+    ToggleShellJack,
 }
 
 #[derive(Debug, Clone)]
@@ -228,6 +229,14 @@ pub fn builtin_entries(
             "WM",
             &["window", "bridge", "tactical", "wm", "hyprland", "sway", "i3", "workspace"],
             LauncherAction::OpenWindowBridge,
+        ),
+        LauncherEntry::new(
+            "protocol.toggle_shell_jack",
+            "OPEN SHELL JACK",
+            "Embedded interactive CLI with shell selection",
+            "SIGNALS",
+            &["shell", "jack", "cli", "terminal", "bash", "zsh", "fish", "embedded", "pty"],
+            LauncherAction::ToggleShellJack,
         ),
     ];
 

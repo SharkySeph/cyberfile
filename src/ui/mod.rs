@@ -3,6 +3,7 @@ mod command_bar;
 mod data_rain;
 mod device_bay;
 mod effects;
+pub(crate) mod embedded_terminal;
 mod file_view;
 mod grid_view;
 mod hex_grid_view;
