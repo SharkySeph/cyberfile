@@ -582,6 +582,8 @@ impl CyberFile {
                     self.cli_input_buffer.clear();
                     self.cli_history_pos = None;
                 }
+                // Re-focus the input field for subsequent commands
+                resp.request_focus();
             }
 
             // Handle Ctrl+C — send interrupt
