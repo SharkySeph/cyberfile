@@ -19,7 +19,7 @@ fn boot_color(kind: char, theme: CyberTheme) -> Color32 {
 }
 
 const BOOT_LINES: &[BootLine] = &[
-    BootLine { time_ms: 0,    text: "[SYSTEM] CYBERFILE v1.3.1",                    kind: 'd' },
+    BootLine { time_ms: 0,    text: "",                                              kind: 'v' },
     BootLine { time_ms: 150,  text: "[SYSTEM] Initializing kernel interface... OK",  kind: 'd' },
     BootLine { time_ms: 350,  text: "[SYSTEM] Mounting filesystem nodes...",         kind: 'd' },
     BootLine { time_ms: 550,  text: "[  OK  ] /home — USER DATA SECTOR",             kind: 's' },
@@ -52,7 +52,18 @@ impl CyberFile {
                 // Render boot lines that have appeared
                 for line in BOOT_LINES {
                     if elapsed_ms >= line.time_ms {
-                        if line.text.is_empty() {
+                        if line.kind == 'v' {
+                            // Dynamic version line from Cargo.toml
+                            ui.label(
+                                RichText::new(format!(
+                                    "[SYSTEM] CYBERFILE v{}",
+                                    env!("CARGO_PKG_VERSION")
+                                ))
+                                .color(boot_color('d', t))
+                                .monospace()
+                                .size(14.0),
+                            );
+                        } else if line.text.is_empty() {
                             ui.add_space(8.0);
                         } else {
                             ui.label(
