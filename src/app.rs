@@ -10,7 +10,6 @@ use std::time::{Duration, Instant};
 
 use crate::config::Settings;
 use crate::filesystem::{self, EntryKind, FileEntry, SortColumn};
-use crate::integrations::journald::LogChannel;
 use crate::integrations::media::MediaState;
 use crate::launcher::{
     self, CommandSurfaceMode, LauncherAction, LauncherEntry, LoadedProtocolManifest,
@@ -124,13 +123,8 @@ pub(crate) enum OperatorJobState {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub(crate) struct OperatorJob {
     pub id: u64,
-    pub label: String,
-    pub command: String,
-    pub cwd: PathBuf,
-    pub started_at: String,
     pub finished_at: Option<String>,
     pub duration_ms: Option<u128>,
     pub status: OperatorJobState,
@@ -150,10 +144,8 @@ pub(crate) enum SignalDeckTab {
 // ── Sound Types ───────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
 pub(crate) enum SoundType {
     Navigate,
-    Select,
     Error,
     Delete,
     CopyComplete,
@@ -431,7 +423,6 @@ pub struct CyberFile {
     pub(crate) cli_selected_shell: usize,
     pub(crate) cli_sessions: Vec<crate::ui::embedded_terminal::CliSession>,
     pub(crate) cli_active_session: usize,
-    pub(crate) cli_next_session_id: u64,
     pub(crate) cli_input_buffer: String,
     pub(crate) cli_history: Vec<String>,
     pub(crate) cli_history_pos: Option<usize>,
@@ -726,7 +717,6 @@ impl CyberFile {
             cli_selected_shell: 0,
             cli_sessions: Vec::new(),
             cli_active_session: 0,
-            cli_next_session_id: 1,
             cli_input_buffer: String::new(),
             cli_history: Vec::new(),
             cli_history_pos: None,
@@ -1191,15 +1181,11 @@ impl CyberFile {
         self.wm_last_refresh = Instant::now();
     }
 
-    fn start_operator_job(&mut self, command: &str, label: &str, cwd: &std::path::Path) -> u64 {
+    fn start_operator_job(&mut self, _command: &str, _label: &str, _cwd: &std::path::Path) -> u64 {
         let job_id = self.next_operator_job_id;
         self.next_operator_job_id += 1;
         let job = OperatorJob {
             id: job_id,
-            label: label.to_string(),
-            command: command.to_string(),
-            cwd: cwd.to_path_buf(),
-            started_at: chrono::Local::now().to_rfc3339(),
             finished_at: None,
             duration_ms: None,
             status: OperatorJobState::Running,
@@ -1228,25 +1214,6 @@ impl CyberFile {
             tail.reverse();
             job.output_tail = tail;
         }
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn restart_operator_job(&mut self, job_id: u64) {
-        let Some(job) = self.operator_jobs.iter().find(|job| job.id == job_id).cloned() else {
-            self.set_error(format!("Operator job not found: {}", job_id));
-            return;
-        };
-        self.run_embedded_shell_command_at(job.command, Some(job.label), job.cwd);
-    }
-
-    #[allow(dead_code)]
-    fn selected_log_channel(&self) -> Option<LogChannel> {
-        let channel_id = self.log_selected_channel_id.as_ref()?;
-        self.settings
-            .log_channels
-            .iter()
-            .find(|channel| &channel.id == channel_id)
-            .cloned()
     }
 
     pub(crate) fn ordered_scene_indices(&self) -> Vec<usize> {
@@ -3225,7 +3192,6 @@ impl CyberFile {
         }
         let freq = match sound_type {
             SoundType::Navigate => 880.0,
-            SoundType::Select => 1200.0,
             SoundType::Error => 220.0,
             SoundType::Delete => 330.0,
             SoundType::CopyComplete => 1400.0,

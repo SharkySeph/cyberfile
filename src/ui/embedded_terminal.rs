@@ -13,9 +13,7 @@ pub(crate) struct ShellInfo {
 }
 
 /// A single interactive CLI session backed by a real PTY.
-#[allow(dead_code)]
 pub(crate) struct CliSession {
-    pub id: u64,
     pub shell: ShellInfo,
     pub output_lines: Vec<String>,
     pub scroll_to_bottom: bool,
@@ -165,11 +163,7 @@ impl CyberFile {
             }
         });
 
-        let session_id = self.cli_next_session_id;
-        self.cli_next_session_id += 1;
-
         let session = CliSession {
-            id: session_id,
             shell,
             output_lines: Vec::new(),
             scroll_to_bottom: true,

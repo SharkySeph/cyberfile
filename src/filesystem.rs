@@ -60,12 +60,10 @@ impl FileEntry {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
 pub enum SortColumn {
     Name,
     Size,
     Modified,
-    Permissions,
     Extension,
 }
 
@@ -121,7 +119,6 @@ pub fn sort_entries(entries: &mut [FileEntry], column: SortColumn, ascending: bo
                     SortColumn::Name => natural_cmp(&a.name, &b.name),
                     SortColumn::Size => a.size.cmp(&b.size),
                     SortColumn::Modified => a.modified.cmp(&b.modified),
-                    SortColumn::Permissions => a.permissions.cmp(&b.permissions),
                     SortColumn::Extension => {
                         let ext_a = Path::new(&a.name)
                             .extension()

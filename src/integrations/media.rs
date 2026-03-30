@@ -1,7 +1,6 @@
 use std::process::{Command, Stdio};
 
 #[derive(Debug, Clone, Default)]
-#[allow(dead_code)]
 pub struct MediaState {
     pub title: String,
     pub artist: String,
@@ -12,7 +11,6 @@ pub struct MediaState {
     pub player_id: String,
     pub position_secs: f64,
     pub duration_secs: f64,
-    pub art_url: String,
 }
 
 #[derive(Debug, Clone)]
@@ -54,12 +52,6 @@ pub fn list_players() -> Vec<PlayerInfo> {
             })
         })
         .collect()
-}
-
-/// Switch to a specific player by id (no-op — caller stores preference).
-#[allow(dead_code)]
-pub fn switch_player(player_id: &str) {
-    let _ = player_id;
 }
 
 /// Seek to an absolute position (seconds) on the given player.
@@ -172,7 +164,7 @@ fn get_state_impl(player: &str) -> MediaState {
             player,
             "metadata",
             "--format",
-            "{{title}}\n{{artist}}\n{{album}}\n{{mpris:artUrl}}",
+            "{{title}}\n{{artist}}\n{{album}}",
         ])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -186,17 +178,16 @@ fn get_state_impl(player: &str) -> MediaState {
             }
         });
 
-    let (title, artist, album, art_url) = match metadata {
+    let (title, artist, album) = match metadata {
         Some(m) => {
             let lines: Vec<&str> = m.lines().collect();
             (
                 lines.first().unwrap_or(&"").to_string(),
                 lines.get(1).unwrap_or(&"").to_string(),
                 lines.get(2).unwrap_or(&"").to_string(),
-                lines.get(3).unwrap_or(&"").to_string(),
             )
         }
-        None => (String::new(), String::new(), String::new(), String::new()),
+        None => (String::new(), String::new(), String::new()),
     };
 
     // Position (seconds, float)
@@ -232,7 +223,6 @@ fn get_state_impl(player: &str) -> MediaState {
         player_id: player.to_string(),
         position_secs,
         duration_secs,
-        art_url,
     }
 }
 

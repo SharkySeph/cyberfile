@@ -119,9 +119,6 @@ pub struct LocalProtocolManifest {
     pub meta: LocalProtocolManifestMeta,
     #[serde(default)]
     pub protocols: Vec<ProtocolCommand>,
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub log_channels: Vec<LogChannel>,
 }
 
 /// Persisted operator configuration loaded from `config.toml`.

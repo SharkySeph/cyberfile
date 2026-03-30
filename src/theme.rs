@@ -279,33 +279,7 @@ impl CyberTheme {
     }
 }
 
-// ── Legacy Color Constants (Night City defaults) ───────────────
-#[allow(dead_code)]
-pub const CYAN: Color32 = Color32::from_rgb(0x00, 0xF0, 0xFF);
-#[allow(dead_code)]
-pub const CYAN_DIM: Color32 = Color32::from_rgb(0x00, 0x80, 0x99);
-#[allow(dead_code)]
-pub const MAGENTA: Color32 = Color32::from_rgb(0xFF, 0x20, 0x79);
-#[allow(dead_code)]
-pub const YELLOW: Color32 = Color32::from_rgb(0xF7, 0xF3, 0x2A);
-#[allow(dead_code)]
-pub const BG_DARK: Color32 = Color32::from_rgb(0x0A, 0x0A, 0x0F);
-#[allow(dead_code)]
-pub const SURFACE: Color32 = Color32::from_rgb(0x0D, 0x11, 0x17);
-#[allow(dead_code)]
-pub const SURFACE_RAISED: Color32 = Color32::from_rgb(0x12, 0x18, 0x22);
-#[allow(dead_code)]
-pub const DANGER: Color32 = Color32::from_rgb(0xFF, 0x33, 0x33);
-#[allow(dead_code)]
-pub const SUCCESS: Color32 = Color32::from_rgb(0x39, 0xFF, 0x14);
-#[allow(dead_code)]
-pub const TEXT_PRIMARY: Color32 = Color32::from_rgb(0xE0, 0xE0, 0xE8);
-#[allow(dead_code)]
-pub const TEXT_DIM: Color32 = Color32::from_rgb(0x4A, 0x7A, 0x7F);
-#[allow(dead_code)]
-pub const BORDER_DIM: Color32 = Color32::from_rgb(0x1A, 0x2A, 0x33);
-#[allow(dead_code)]
-pub const BORDER_ACTIVE: Color32 = Color32::from_rgb(0x00, 0x60, 0x66);
+
 
 // ── Apply Theme to egui ────────────────────────────────────────
 
@@ -415,17 +389,6 @@ pub fn section_header(ui: &mut egui::Ui, label: &str, color: Color32) {
                 .size(13.0),
         );
     });
-}
-
-#[allow(dead_code)]
-pub fn cyber_separator(ui: &mut egui::Ui) {
-    let rect = ui.available_rect_before_wrap();
-    let y = rect.top() + 2.0;
-    ui.painter().line_segment(
-        [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
-        Stroke::new(0.5, BORDER_DIM),
-    );
-    ui.add_space(5.0);
 }
 
 pub fn cyber_separator_themed(ui: &mut egui::Ui, color: Color32) {

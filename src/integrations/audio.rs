@@ -4,9 +4,7 @@ use std::sync::OnceLock;
 // ── Audio Sink/Source Types ────────────────────────────────
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct AudioSink {
-    pub id: u32,
     pub name: String,
     pub description: String,
     pub volume_percent: u32,
@@ -15,24 +13,17 @@ pub struct AudioSink {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct AudioSource {
-    pub id: u32,
-    pub name: String,
-    pub description: String,
-    pub volume_percent: u32,
     pub muted: bool,
     pub is_default: bool,
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct AudioStream {
     pub id: u32,
     pub app_name: String,
     pub volume_percent: u32,
     pub muted: bool,
-    pub sink_id: Option<u32>,
 }
 
 // ── Snapshot ───────────────────────────────────────────────
@@ -211,7 +202,6 @@ fn parse_pactl_sinks(json: &str, snap: &mut AudioSnapshot) {
         if let Some(val) = extract_json_u32(trimmed, "\"index\"") {
             if current_id.is_some() {
                 snap.sinks.push(AudioSink {
-                    id: current_id.unwrap_or(0),
                     name: current_name.clone(),
                     description: current_desc.clone(),
                     volume_percent: current_vol,
@@ -246,9 +236,8 @@ fn parse_pactl_sinks(json: &str, snap: &mut AudioSnapshot) {
             current_muted = val;
         }
     }
-    if let Some(id) = current_id {
+    if let Some(_id) = current_id {
         snap.sinks.push(AudioSink {
-            id,
             name: current_name,
             description: current_desc,
             volume_percent: current_vol,
@@ -278,10 +267,6 @@ fn parse_pactl_sources(json: &str, snap: &mut AudioSnapshot) {
         if let Some(val) = extract_json_u32(trimmed, "\"index\"") {
             if current_id.is_some() {
                 snap.sources.push(AudioSource {
-                    id: current_id.unwrap_or(0),
-                    name: current_name.clone(),
-                    description: current_desc.clone(),
-                    volume_percent: current_vol,
                     muted: current_muted,
                     is_default: current_default,
                 });
@@ -313,12 +298,8 @@ fn parse_pactl_sources(json: &str, snap: &mut AudioSnapshot) {
             current_muted = val;
         }
     }
-    if let Some(id) = current_id {
+    if let Some(_id) = current_id {
         snap.sources.push(AudioSource {
-            id,
-            name: current_name,
-            description: current_desc,
-            volume_percent: current_vol,
             muted: current_muted,
             is_default: current_default,
         });
@@ -330,7 +311,6 @@ fn parse_pactl_streams(json: &str, snap: &mut AudioSnapshot) {
     let mut current_app = String::new();
     let mut current_vol: u32 = 0;
     let mut current_muted = false;
-    let mut current_sink: Option<u32> = None;
 
     for line in json.lines() {
         let trimmed = line.trim();
@@ -341,17 +321,12 @@ fn parse_pactl_streams(json: &str, snap: &mut AudioSnapshot) {
                     app_name: current_app.clone(),
                     volume_percent: current_vol,
                     muted: current_muted,
-                    sink_id: current_sink,
                 });
             }
             current_id = Some(val);
             current_app.clear();
             current_vol = 0;
             current_muted = false;
-            current_sink = None;
-        }
-        if let Some(val) = extract_json_u32(trimmed, "\"sink\"") {
-            current_sink = Some(val);
         }
         if let Some(val) = extract_json_str(trimmed, "\"application.name\"") {
             current_app = val;
@@ -371,7 +346,6 @@ fn parse_pactl_streams(json: &str, snap: &mut AudioSnapshot) {
             app_name: current_app,
             volume_percent: current_vol,
             muted: current_muted,
-            sink_id: current_sink,
         });
     }
 }
@@ -541,21 +515,6 @@ pub fn set_brightness_percent(percent: u32) {
 }
 
 // ── Idle Inhibit ───────────────────────────────────────────
-
-/// Check whether idle/sleep inhibit is currently active.
-/// Looks for any existing inhibitor locks via `systemd-inhibit --list`.
-#[allow(dead_code)]
-pub fn is_idle_inhibited() -> bool {
-    // Check if our own inhibitor process is still alive
-    // We use a sentinel approach: look for our inhibitor in the list
-    Command::new("systemd-inhibit")
-        .args(["--list", "--no-pager"])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).contains("cyberfile"))
-        .unwrap_or(false)
-}
 
 /// Start an idle inhibitor. Returns the child process handle.
 /// The inhibitor stays active as long as the process is alive.

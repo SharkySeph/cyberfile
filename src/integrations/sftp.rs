@@ -18,8 +18,6 @@ pub struct RemoteEntry {
     pub path: String,
     pub is_dir: bool,
     pub size: u64,
-    #[allow(dead_code)]
-    pub permissions: u32,
 }
 
 impl SftpConnection {
@@ -131,7 +129,6 @@ impl SftpConnection {
                 path: entry_path.to_string_lossy().to_string(),
                 is_dir: stat.is_dir(),
                 size: stat.size.unwrap_or(0),
-                permissions: stat.perm.unwrap_or(0) as u32,
             });
         }
 
@@ -171,7 +168,6 @@ impl SftpConnection {
     }
 
     /// Upload a local file to the remote host
-    #[allow(dead_code)]
     pub fn upload_file(&self, local_path: &Path, remote_path: &str) -> Result<(), String> {
         let contents = std::fs::read(local_path)
             .map_err(|e| format!("Failed to read local file: {}", e))?;
@@ -195,45 +191,6 @@ impl SftpConnection {
     /// Get display name for the connection
     pub fn display_name(&self) -> String {
         format!("{}@{}", self.user, self.host)
-    }
-}
-
-/// Parse an sftp:// URI into (host, port, user, path) components
-/// Format: sftp://user@host:port/path or sftp://user@host/path
-#[allow(dead_code)]
-pub fn parse_sftp_uri(uri: &str) -> Option<(String, u16, String, String)> {
-    let stripped = uri.strip_prefix("sftp://")?;
-
-    let (user_host, path) = if let Some(idx) = stripped.find('/') {
-        (&stripped[..idx], &stripped[idx..])
-    } else {
-        (stripped, "/")
-    };
-
-    let (user, host_port) = if let Some(idx) = user_host.find('@') {
-        (&user_host[..idx], &user_host[idx + 1..])
-    } else {
-        let current_user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
-        return Some((
-            host_port_split(user_host).0,
-            host_port_split(user_host).1,
-            current_user,
-            path.to_string(),
-        ));
-    };
-
-    let (host, port) = host_port_split(host_port);
-    Some((host, port, user.to_string(), path.to_string()))
-}
-
-#[allow(dead_code)]
-fn host_port_split(s: &str) -> (String, u16) {
-    if let Some(idx) = s.find(':') {
-        let host = s[..idx].to_string();
-        let port = s[idx + 1..].parse().unwrap_or(22);
-        (host, port)
-    } else {
-        (s.to_string(), 22)
     }
 }
 

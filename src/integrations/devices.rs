@@ -14,25 +14,6 @@ pub struct BlockDevice {
     pub dev_type: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
-pub enum DeviceAction {
-    Mount,
-    Unmount,
-    Eject,
-}
-
-#[allow(dead_code)]
-impl DeviceAction {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Mount => "Mount",
-            Self::Unmount => "Unmount",
-            Self::Eject => "Eject",
-        }
-    }
-}
-
 // ── Device Listing ─────────────────────────────────────────
 
 pub fn list_block_devices() -> Result<Vec<BlockDevice>, String> {
