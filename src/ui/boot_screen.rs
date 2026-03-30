@@ -19,7 +19,7 @@ fn boot_color(kind: char, theme: CyberTheme) -> Color32 {
 }
 
 const BOOT_LINES: &[BootLine] = &[
-    BootLine { time_ms: 0,    text: "[SYSTEM] CYBERFILE v1.1.2",                    kind: 'd' },
+    BootLine { time_ms: 0,    text: "[SYSTEM] CYBERFILE v1.3.1",                    kind: 'd' },
     BootLine { time_ms: 150,  text: "[SYSTEM] Initializing kernel interface... OK",  kind: 'd' },
     BootLine { time_ms: 350,  text: "[SYSTEM] Mounting filesystem nodes...",         kind: 'd' },
     BootLine { time_ms: 550,  text: "[  OK  ] /home — USER DATA SECTOR",             kind: 's' },
