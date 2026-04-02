@@ -316,10 +316,18 @@ impl CyberFile {
                                 }
                             }
 
-                            card_response.on_hover_text(format!(
+                            card_response.clone().on_hover_text(format!(
                                 "{}\n{} │ {}",
                                 cell.name, cell.size, cell.ext
                             ));
+
+                            // Scroll to this card if type-ahead just selected it
+                            if current_selected == Some(cell.index)
+                                && !self.type_ahead_buffer.is_empty()
+                                && self.type_ahead_last_key.elapsed().as_millis() < 600
+                            {
+                                card_response.scroll_to_me(Some(egui::Align::Center));
+                            }
 
                             // Small gap between cards
                             ui.add_space(4.0);

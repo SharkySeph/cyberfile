@@ -269,11 +269,11 @@ impl CyberTheme {
         match self {
             Self::NightCity => Color32::from_rgba_premultiplied(0xFF, 0x20, 0x79, 0x66),
             Self::Section9 => Color32::from_rgba_premultiplied(0x9B, 0x59, 0xB6, 0x66),
-            Self::MagiSystem => Color32::from_rgba_premultiplied(0xFF, 0x6B, 0x00, 0x66),
+            Self::MagiSystem => Color32::from_rgba_premultiplied(0xDC, 0x14, 0x3C, 0x66),
             Self::Gibson => Color32::from_rgba_premultiplied(0x00, 0xFF, 0x41, 0x66),
             Self::Tyrell => Color32::from_rgba_premultiplied(0xD4, 0xA5, 0x20, 0x66),
-            Self::Akira => Color32::from_rgba_premultiplied(0xFF, 0x17, 0x44, 0x66),
-            Self::Wintermute => Color32::from_rgba_premultiplied(0xC0, 0xC8, 0xD8, 0x66),
+            Self::Akira => Color32::from_rgba_premultiplied(0xE0, 0xE0, 0xF0, 0x30),
+            Self::Wintermute => Color32::from_rgba_premultiplied(0x88, 0xCC, 0xFF, 0x44),
             Self::Outrun => Color32::from_rgba_premultiplied(0x00, 0xBF, 0xFF, 0x66),
         }
     }

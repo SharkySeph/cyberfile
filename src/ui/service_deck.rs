@@ -151,7 +151,8 @@ impl CyberFile {
                 .show(ui, |ui| {
                     for entry in &entries {
                         let is_selected = selected_unit.as_deref() == Some(&entry.unit);
-                        let text_color = if is_selected { t.primary() } else { t.text_primary() };
+                        let text_color = if is_selected { t.text_primary() } else { t.text_primary() };
+                        let desc_color = if is_selected { t.text_primary() } else { t.text_dim() };
                         let active_color = match entry.active.as_str() {
                             "active" => t.accent(),
                             "inactive" => t.text_dim(),
@@ -204,7 +205,7 @@ impl CyberFile {
                             );
                             ui.label(
                                 RichText::new(&entry.description)
-                                    .color(t.text_dim())
+                                    .color(desc_color)
                                     .monospace()
                                     .size(10.0),
                             );

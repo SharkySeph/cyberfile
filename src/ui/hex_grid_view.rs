@@ -182,6 +182,21 @@ impl CyberFile {
         // Compute circular positions
         let positions = circular_hex_positions(cells.len(), hex_radius);
 
+        // Pan to selected hex if type-ahead just selected it
+        if let Some(sel_idx) = current_selected {
+            if !self.type_ahead_buffer.is_empty()
+                && self.type_ahead_last_key.elapsed().as_millis() < 600
+            {
+                // Find the position index matching the selected entry index
+                if let Some(pos_i) = cells.iter().position(|c| c.index == sel_idx) {
+                    if let Some(&(ox, oy)) = positions.get(pos_i) {
+                        // Pan so the selected hex is at center (offset=0 means center)
+                        self.hex_pan_offset = egui::vec2(-ox, -oy);
+                    }
+                }
+            }
+        }
+
         egui::ScrollArea::both()
             .auto_shrink(false)
             .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)

@@ -258,26 +258,27 @@ impl CyberFile {
                             ui.label(name_text);
 
                             // Right-aligned metadata
+                            let meta_color = if is_sel { t.text_primary() } else { t.text_dim() };
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
                                     ui.label(
                                         RichText::new(&row.permissions)
-                                            .color(t.text_dim())
+                                            .color(meta_color)
                                             .monospace()
                                             .size(11.0),
                                     );
                                     ui.add_space(16.0);
                                     ui.label(
                                         RichText::new(&row.modified)
-                                            .color(t.text_dim())
+                                            .color(meta_color)
                                             .monospace()
                                             .size(11.0),
                                     );
                                     ui.add_space(16.0);
                                     ui.label(
                                         RichText::new(&row.size)
-                                            .color(t.text_dim())
+                                            .color(meta_color)
                                             .monospace()
                                             .size(11.0),
                                     );

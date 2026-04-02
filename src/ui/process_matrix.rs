@@ -168,7 +168,7 @@ impl CyberFile {
                         } else {
                             Color32::TRANSPARENT
                         };
-                        let text_color = if is_selected { t.primary() } else { t.text_primary() };
+                        let text_color = if is_selected { t.text_primary() } else { t.text_primary() };
                         let cpu_color = if entry.cpu_percent > 50.0 {
                             t.danger()
                         } else if entry.cpu_percent > 15.0 {
