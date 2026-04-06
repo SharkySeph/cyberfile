@@ -3,6 +3,12 @@ use eframe::egui::{self, Color32, RichText};
 use crate::app::CyberFile;
 use crate::theme::CyberTheme;
 
+// ── CRT Star Wipe ──────────────────────────────────────────────────────
+// Simulates an old CRT powering on: a bright horizontal slit in the
+// center that expands vertically while a star/diamond shape blooms
+// outward, then the whole screen "opens up" to reveal the boot text.
+const STAR_WIPE_DURATION_MS: u64 = 700;
+
 struct BootLine {
     time_ms: u64,
     text: &'static str,
@@ -19,20 +25,20 @@ fn boot_color(kind: char, theme: CyberTheme) -> Color32 {
 }
 
 const BOOT_LINES: &[BootLine] = &[
-    BootLine { time_ms: 0,    text: "",                                              kind: 'v' },
-    BootLine { time_ms: 150,  text: "[SYSTEM] Initializing kernel interface... OK",  kind: 'd' },
-    BootLine { time_ms: 350,  text: "[SYSTEM] Mounting filesystem nodes...",         kind: 'd' },
-    BootLine { time_ms: 550,  text: "[  OK  ] /home — USER DATA SECTOR",             kind: 's' },
-    BootLine { time_ms: 700,  text: "[  OK  ] /media — EXTERNAL NODES",              kind: 's' },
-    BootLine { time_ms: 850,  text: "[  OK  ] /tmp — VOLATILE CACHE",                kind: 's' },
-    BootLine { time_ms: 1050, text: "[SYSTEM] Loading neural interface...",           kind: 'd' },
-    BootLine { time_ms: 1350, text: "[SYSTEM] Indexing data constructs...",           kind: 'd' },
-    BootLine { time_ms: 1600, text: "[SYSTEM] STATUS: OPERATIONAL",                  kind: 'p' },
-    BootLine { time_ms: 2000, text: "",                                              kind: 'd' },
-    BootLine { time_ms: 2200, text: "> WELCOME BACK, OPERATOR.",                     kind: 'p' },
+    BootLine { time_ms: 700,  text: "",                                              kind: 'v' },
+    BootLine { time_ms: 850,  text: "[SYSTEM] Initializing kernel interface... OK",  kind: 'd' },
+    BootLine { time_ms: 1050, text: "[SYSTEM] Mounting filesystem nodes...",         kind: 'd' },
+    BootLine { time_ms: 1250, text: "[  OK  ] /home — USER DATA SECTOR",             kind: 's' },
+    BootLine { time_ms: 1400, text: "[  OK  ] /media — EXTERNAL NODES",              kind: 's' },
+    BootLine { time_ms: 1550, text: "[  OK  ] /tmp — VOLATILE CACHE",                kind: 's' },
+    BootLine { time_ms: 1750, text: "[SYSTEM] Loading neural interface...",           kind: 'd' },
+    BootLine { time_ms: 2050, text: "[SYSTEM] Indexing data constructs...",           kind: 'd' },
+    BootLine { time_ms: 2300, text: "[SYSTEM] STATUS: OPERATIONAL",                  kind: 'p' },
+    BootLine { time_ms: 2700, text: "",                                              kind: 'd' },
+    BootLine { time_ms: 2900, text: "> WELCOME BACK, OPERATOR.",                     kind: 'p' },
 ];
 
-const BOOT_DURATION_MS: u64 = 2800;
+const BOOT_DURATION_MS: u64 = 3500;
 
 impl CyberFile {
     pub(crate) fn render_boot_screen(&mut self, ctx: &egui::Context) {
@@ -47,6 +53,108 @@ impl CyberFile {
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(t.bg_dark()).inner_margin(40.0))
             .show(ctx, |ui| {
+                // ── CRT Star Wipe overlay ──────────────────────
+                // During the first STAR_WIPE_DURATION_MS milliseconds we draw
+                // a black overlay with a diamond/star-shaped hole expanding
+                // from the centre, mimicking an old CRT powering on.
+                if elapsed_ms < STAR_WIPE_DURATION_MS {
+                    let screen = ctx.screen_rect();
+                    let cx = screen.center().x;
+                    let cy = screen.center().y;
+                    let half_w = screen.width() * 0.5;
+                    let half_h = screen.height() * 0.5;
+
+                    // t_wipe goes 0→1 over the wipe duration (ease-out cubic)
+                    let linear = elapsed_ms as f32 / STAR_WIPE_DURATION_MS as f32;
+                    let ease = 1.0 - (1.0 - linear) * (1.0 - linear) * (1.0 - linear);
+
+                    // Diamond radius in each axis
+                    let rx = half_w * ease * 1.3; // a bit oversized so it fully clears
+                    let ry = half_h * ease * 1.3;
+
+                    let painter = ctx.layer_painter(egui::LayerId::new(
+                        egui::Order::Foreground,
+                        egui::Id::new("crt_star_wipe"),
+                    ));
+
+                    // Black overlay everywhere; punch out a diamond via 4 triangles
+                    // Strategy: cover top, bottom, left, right trapezoids around
+                    // the diamond hole.  We use a mesh for the star/diamond.
+                    let black = Color32::BLACK;
+                    let pc = t.primary();
+
+                    // Four triangular "cover" regions outside the diamond:
+                    // Top triangle: top-left corner → top-right corner → diamond-top
+                    let d_top   = egui::pos2(cx, cy - ry);
+                    let d_bot   = egui::pos2(cx, cy + ry);
+                    let d_left  = egui::pos2(cx - rx, cy);
+                    let d_right = egui::pos2(cx + rx, cy);
+
+                    let tl = screen.left_top();
+                    let tr = screen.right_top();
+                    let bl = screen.left_bottom();
+                    let br = screen.right_bottom();
+
+                    // Top region (two triangles forming a quad from top edge → diamond top)
+                    painter.add(egui::Shape::convex_polygon(
+                        vec![tl, tr, d_right, d_top, d_left],
+                        black,
+                        egui::Stroke::NONE,
+                    ));
+                    // Bottom region
+                    painter.add(egui::Shape::convex_polygon(
+                        vec![bl, br, d_right, d_bot, d_left],
+                        black,
+                        egui::Stroke::NONE,
+                    ));
+                    // Left region
+                    painter.add(egui::Shape::convex_polygon(
+                        vec![tl, bl, d_left],
+                        black,
+                        egui::Stroke::NONE,
+                    ));
+                    // Right region
+                    painter.add(egui::Shape::convex_polygon(
+                        vec![tr, br, d_right],
+                        black,
+                        egui::Stroke::NONE,
+                    ));
+
+                    // Bright leading edge of the diamond (CRT phosphor glow)
+                    let edge_alpha = ((1.0 - ease) * 200.0).min(180.0).max(0.0) as u8;
+                    let glow = Color32::from_rgba_premultiplied(
+                        (pc.r() as f32 * edge_alpha as f32 / 255.0) as u8,
+                        (pc.g() as f32 * edge_alpha as f32 / 255.0) as u8,
+                        (pc.b() as f32 * edge_alpha as f32 / 255.0) as u8,
+                        edge_alpha,
+                    );
+                    painter.add(egui::Shape::closed_line(
+                        vec![d_top, d_right, d_bot, d_left],
+                        egui::Stroke::new(2.0 + (1.0 - ease) * 3.0, glow),
+                    ));
+
+                    // Bright horizontal scan-slit at centre (the classic CRT power-on line)
+                    if ease < 0.5 {
+                        let slit_alpha = ((0.5 - ease) * 2.0 * 255.0).min(220.0) as u8;
+                        let slit_h = 2.0 + (1.0 - ease * 2.0) * 1.0;
+                        let slit_w = screen.width() * (ease * 2.0).min(1.0);
+                        let slit_color = Color32::from_rgba_premultiplied(
+                            (pc.r() as f32 * slit_alpha as f32 / 255.0) as u8,
+                            (pc.g() as f32 * slit_alpha as f32 / 255.0) as u8,
+                            (pc.b() as f32 * slit_alpha as f32 / 255.0) as u8,
+                            slit_alpha,
+                        );
+                        painter.rect_filled(
+                            egui::Rect::from_center_size(
+                                screen.center(),
+                                egui::vec2(slit_w, slit_h),
+                            ),
+                            0.0,
+                            slit_color,
+                        );
+                    }
+                }
+
                 ui.add_space(40.0);
 
                 // Render boot lines that have appeared
@@ -93,7 +201,7 @@ impl CyberFile {
 
                 ui.add_space(24.0);
 
-                if elapsed_ms > 900 {
+                if elapsed_ms > 1600 {
                     ui.label(
                         RichText::new(if has_session_resume {
                             "[ENTER] Resume last session deck   [0] Fresh start   [1-4] Restore quick scene"
